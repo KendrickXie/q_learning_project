@@ -5,6 +5,9 @@ import numpy as np
 import os
 from numpy.random import choice
 from q_learning_project.msg import QLearningReward, QMatrix, QMatrixRow, RobotMoveObjectToTag
+from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import Image
+
 
 
 # Path of directory on where this file is located
@@ -63,6 +66,8 @@ class QLearning(object):
         self.q_matrix = np.zeros((self.num_states, self.num_actions))
 
         # Publishers and Subscribers
+        self.lidar_subscriber = rospy.Subscriber("/scan", LaserScan, self.follow_wall)
+        self.camera_subscriber = rospy.Subscriber('camera/rgb/image_raw', Image, self.image_callback)
         self.action_publisher = rospy.Publisher("/q_learning/robot_action", RobotMoveObjectToTag, queue_size=10)
         self.reward_subscriber = rospy.Subscriber("/q_learning/reward", QLearningReward, queue_size=10)
         self.q_matrix_publisher = rospy.Publisher("/q_learning/q_matrix", QMatrix, queue_size=10)
