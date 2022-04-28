@@ -3,7 +3,9 @@
 import rospy
 import numpy as np
 import os
-from numpy.random import choice
+import copy
+
+from numpy import random
 from q_learning_project.msg import QLearningReward, QMatrix, QMatrixRow, RobotMoveObjectToTag
 
 
@@ -22,7 +24,7 @@ class QLearning(object):
         # correspond to the starting state and column indexes are the next states.
         #
         # A value of -1 indicates that it is not possible to get to the next state
-        # from the starting state. Values 0-9 correspond to what action is needed
+        # from the starting state. Values 0-8 correspond to what action is needed
         # to go to the next state.
         #
         # e.g. self.action_matrix[0][12] = 5
@@ -32,10 +34,10 @@ class QLearning(object):
         # self.actions is an array of dictionaries where the row index corresponds
         # to the action number, and the value has the following form:
         # { object: "pink", tag: 1}
-        colors = ["pink", "green", "blue"]
+        self.colors = ["pink", "green", "blue"]
         self.actions = np.loadtxt(path_prefix + "actions.txt")
         self.actions = list(map(
-            lambda x: {"object": colors[int(x[0])], "tag": int(x[1])},
+            lambda x: {"object": self.colors[int(x[0])], "tag": int(x[1])},
             self.actions
         ))
 
@@ -58,13 +60,17 @@ class QLearning(object):
         self.iterations = 0
         self.num_states = len(self.states)
         self.num_actions = len(self.actions)
+        self.curr_state = 0
+        self.converge_threshold = 0.1
+        self.num_of_continuous_below_thresh = 0
+
 
         # Q Matrix
         self.q_matrix = np.zeros((self.num_states, self.num_actions))
 
         # Publishers and Subscribers
         self.action_publisher = rospy.Publisher("/q_learning/robot_action", RobotMoveObjectToTag, queue_size=10)
-        self.reward_subscriber = rospy.Subscriber("/q_learning/reward", QLearningReward, queue_size=10)
+        self.reward_subscriber = rospy.Subscriber("/q_learning/reward", QLearningReward, self.get_reward)
         self.q_matrix_publisher = rospy.Publisher("/q_learning/q_matrix", QMatrix, queue_size=10)
 
 
@@ -92,17 +98,88 @@ class QLearning(object):
 
         self.initialized = True
 
-    def select_valid_action(self):
-        pass
 
-    def check_converged(self):
-        pass
 
-    def perform_action(self):
-        pass
+
+    def train(self):
+        while not self.converged and self.iterations < self.epochs:
+            valid_actions = self.select_valid_actions()
+            # no valid actions
+            if len(valid_actions) == 0:
+                self.reset_positions()
+                self.iterations += 1
+                continue
+            # received candidate actions
+            selected_action = random.choice(valid_actions, size=1)
+            # perform action
+            self.perform_action(selected_action)
+            # get reward
+            r_t = self.get_reward()
+
+            # update Q value
+            next_state = selected_action["next_state"]
+            max_a_Q = max(self.q_matrix[next_state])
+            curr_q = copy.deepcopy(self.q_matrix[self.curr_state][selected_action["action_idx"]])
+            new_q_a_t = self.lr * (r_t + self.dr * max_a_Q - curr_q)
+            self.q_matrix[self.curr_state][selected_action["action_idx"]] += new_q_a_t
+            self.iterations += 1
+            if self.check_converged(curr_q, selected_action):
+                self.converged = True
+            
+
+
+    def reset_positions(self):
+        # pass
+        self.curr_state = 0
+
+
+    def select_valid_actions(self):
+        # pass
+        row_num = self.curr_state
+        # all_actions = self.action_matrix[row_num]
+        valid_actions = [] 
+        for i, action in enumerate(self.action_matrix[row_num]):
+            if action != -1:
+                valid_actions.append({"next_state": i, "action_idx": action})
+        return valid_actions
+        
+
+    def check_converged(self, curr_q, selected_action):
+        # pass
+        delta_q = curr_q - self.q_matrix[self.curr_state][selected_action["action_idx"]]
+        if delta_q < self.converge_threshold:
+            self.num_of_continuous_below_thresh += 1
+        else:
+            self.num_of_continuous_below_thresh = 0
+        if self.num_of_continuous_below_thresh >= 10:
+            return True
+        return False
+        
+
+    def perform_action(self, selected_action):
+        # pass
+        # string robot_object
+        # int16 tag_id
+        color, tag = self.get_action_details(selected_action)
+        message = RobotMoveObjectToTag(
+            robot_object = color, 
+            tag_id = tag
+        )
+        self.action_publisher.publish(message)
+
+
+    def get_action_details(self, selected_action):
+        action_deets = self.actions[selected_action["action_idx"]]
+        color = action_deets["object"]
+        tag = action_deets["tag"]
+        return color, tag
+
 
     def get_reward(self, data):     # data: QLearningReward
-        pass
+        # pass
+        # what publishes the rewards to "/q_learning/reward"
+        reward = data.reward
+        return reward
 
     def save_q_matrix(self):
         # TODO: You'll want to save your q_matrix to a file once it is done to
