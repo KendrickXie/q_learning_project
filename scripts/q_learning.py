@@ -3,12 +3,18 @@
 import rospy
 import numpy as np
 import os
+from numpy.random import choice
+from q_learning_project.msg import QLearningReward, QMatrix, QMatrixRow, RobotMoveObjectToTag
+
 
 # Path of directory on where this file is located
 path_prefix = os.path.dirname(__file__) + "/action_states/"
 
 class QLearning(object):
     def __init__(self):
+        # once everything is setup initialized will be set to true
+        self.initialized = False
+
         # Initialize this node
         rospy.init_node("q_learning")
 
@@ -43,6 +49,60 @@ class QLearning(object):
         # Note: that not all states are possible to get to.
         self.states = np.loadtxt(path_prefix + "states.txt")
         self.states = list(map(lambda x: list(map(lambda y: int(y), x)), self.states))
+
+        # Hyperparameters and Macros
+        self.lr = 1.0
+        self.dr = 0.8
+        self.epochs = 100
+        self.converged = False
+        self.iterations = 0
+        self.num_states = len(self.states)
+        self.num_actions = len(self.actions)
+
+        # Q Matrix
+        self.q_matrix = np.zeros((self.num_states, self.num_actions))
+
+        # Publishers and Subscribers
+        self.action_publisher = rospy.Publisher("/q_learning/robot_action", RobotMoveObjectToTag, queue_size=10)
+        self.reward_subscriber = rospy.Subscriber("/q_learning/reward", QLearningReward, queue_size=10)
+        self.q_matrix_publisher = rospy.Publisher("/q_learning/q_matrix", QMatrix, queue_size=10)
+
+
+        '''
+        pseudocode:
+
+        initialize_q_mat()      # initialize to 0s 
+        while !self.converged and self.iterations < self.epoch:     # stop when converged or hit max epochs to prevent infinite loops (?)
+            select random valid action      # select non "-1" values from action_matrix. 
+                -> 
+            perform action
+            receive reward 
+            update Q mat
+                -> how to identify next S_t+1? 
+                -> need to track curr state to get S_t+1? 
+                -> LR should be 1? Too large will overshoot? 
+            self.iterations += 1
+        
+        if self.converged:
+            save_q_matrix()
+
+        '''
+
+        rospy.sleep(2)
+
+        self.initialized = True
+
+    def select_valid_action(self):
+        pass
+
+    def check_converged(self):
+        pass
+
+    def perform_action(self):
+        pass
+
+    def get_reward(self, data):     # data: QLearningReward
+        pass
 
     def save_q_matrix(self):
         # TODO: You'll want to save your q_matrix to a file once it is done to
