@@ -110,7 +110,7 @@ class QLearning(object):
                 self.iterations += 1
                 continue
             # received candidate actions
-            selected_action = random.choice(valid_actions, size=1)
+            selected_action = random.choice(valid_actions, size=1)  #next state index, action of to get there index
             # perform action
             self.perform_action(selected_action)
             # get reward
@@ -146,7 +146,7 @@ class QLearning(object):
 
     def check_converged(self, curr_q, selected_action):
         # pass
-        delta_q = curr_q - self.q_matrix[self.curr_state][selected_action["action_idx"]]
+        delta_q = abs(curr_q - self.q_matrix[self.curr_state][selected_action["action_idx"]])
         if delta_q < self.converge_threshold:
             self.num_of_continuous_below_thresh += 1
         else:
