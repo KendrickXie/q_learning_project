@@ -120,17 +120,21 @@ class QLearning(object):
             next_state = selected_action["next_state"]
             max_a_Q = max(self.q_matrix[next_state])
             curr_q = copy.deepcopy(self.q_matrix[self.curr_state][selected_action["action_idx"]])
-            new_q_a_t = self.lr * (r_t + self.dr * max_a_Q - curr_q)
-            self.q_matrix[self.curr_state][selected_action["action_idx"]] += new_q_a_t
+            q_update = self.lr * (r_t + self.dr * max_a_Q - curr_q)
+            self.q_matrix[self.curr_state][selected_action["action_idx"]] += q_update
             self.iterations += 1
+            self.curr_state = next_state
             if self.check_converged(curr_q, selected_action):
                 self.converged = True
+                self.save_q_matrix()
+
             
 
 
     def reset_positions(self):
         # pass
         self.curr_state = 0
+        return 
 
 
     def select_valid_actions(self):
@@ -166,6 +170,7 @@ class QLearning(object):
             tag_id = tag
         )
         self.action_publisher.publish(message)
+        return
 
 
     def get_action_details(self, selected_action):
@@ -184,7 +189,9 @@ class QLearning(object):
     def save_q_matrix(self):
         # TODO: You'll want to save your q_matrix to a file once it is done to
         # avoid retraining
+        np.savetxt(path_prefix + "q_matrix.txt", self.q_matrix)
         return
 
 if __name__ == "__main__":
     node = QLearning()
+    node.train()
