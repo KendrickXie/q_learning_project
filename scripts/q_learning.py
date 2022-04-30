@@ -102,6 +102,9 @@ class QLearning(object):
 
 
     def train(self):
+        if not self.initialized:
+            return 
+            
         while not self.converged and self.iterations < self.epochs:
             valid_actions = self.select_valid_actions()
             # no valid actions
