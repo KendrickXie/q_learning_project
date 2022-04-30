@@ -61,6 +61,7 @@ class QLearning(object):
         self.num_states = len(self.states)
         self.num_actions = len(self.actions)
         self.curr_state = 0
+        self.curr_reward = 0
         self.converge_threshold = 0.1
         self.num_of_continuous_below_thresh = 0
 
@@ -104,8 +105,11 @@ class QLearning(object):
     def train(self):
         if not self.initialized:
             return 
-            
-        while not self.converged and self.iterations < self.epochs:
+
+        print("initialized")
+        # while not self.converged and self.iterations < self.epochs:
+        while self.iterations < self.epochs:
+            print("iteration: ", self.iterations)
             valid_actions = self.select_valid_actions()
             # no valid actions
             if len(valid_actions) == 0:
@@ -113,11 +117,11 @@ class QLearning(object):
                 self.iterations += 1
                 continue
             # received candidate actions
-            selected_action = random.choice(valid_actions, size=1)  #next state index, action of to get there index
+            selected_action = random.choice(valid_actions, size=1)[0]  #next state index, action of to get there index
             # perform action
             self.perform_action(selected_action)
             # get reward
-            r_t = self.get_reward()
+            r_t = self.curr_reward
 
             # update Q value
             next_state = selected_action["next_state"]
@@ -127,15 +131,17 @@ class QLearning(object):
             self.q_matrix[self.curr_state][selected_action["action_idx"]] += q_update
             self.iterations += 1
             self.curr_state = next_state
-            if self.check_converged(curr_q, selected_action):
-                self.converged = True
-                self.save_q_matrix()
+            # if self.check_converged(curr_q, selected_action):
+            #     self.converged = True
+            #     self.save_q_matrix()
+        self.save_q_matrix()
 
             
 
 
     def reset_positions(self):
         # pass
+        print("reset positions")
         self.curr_state = 0
         return 
 
@@ -147,7 +153,7 @@ class QLearning(object):
         valid_actions = [] 
         for i, action in enumerate(self.action_matrix[row_num]):
             if action != -1:
-                valid_actions.append({"next_state": i, "action_idx": action})
+                valid_actions.append({"next_state": i, "action_idx": int(action)})
         return valid_actions
         
 
@@ -167,6 +173,7 @@ class QLearning(object):
         # pass
         # string robot_object
         # int16 tag_id
+        print("sel act:", selected_action)
         color, tag = self.get_action_details(selected_action)
         message = RobotMoveObjectToTag(
             robot_object = color, 
@@ -177,6 +184,7 @@ class QLearning(object):
 
 
     def get_action_details(self, selected_action):
+        print(type(selected_action["action_idx"]), selected_action["action_idx"])
         action_deets = self.actions[selected_action["action_idx"]]
         color = action_deets["object"]
         tag = action_deets["tag"]
@@ -186,15 +194,18 @@ class QLearning(object):
     def get_reward(self, data):     # data: QLearningReward
         # pass
         # what publishes the rewards to "/q_learning/reward"
-        reward = data.reward
-        return reward
+        print("reward:", data.reward)
+        self.curr_reward = data.reward
+        return 
 
     def save_q_matrix(self):
         # TODO: You'll want to save your q_matrix to a file once it is done to
         # avoid retraining
+        print("saving q_matrix")
         np.savetxt(path_prefix + "q_matrix.txt", self.q_matrix)
         return
 
 if __name__ == "__main__":
+    print("hi")
     node = QLearning()
     node.train()
