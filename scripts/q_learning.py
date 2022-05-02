@@ -55,7 +55,7 @@ class QLearning(object):
         # Hyperparameters and Macros
         self.lr = 1.0
         self.dr = 0.8
-        self.epochs = 100
+        self.epochs = 75000
         self.converged = False
         self.iterations = 0
         self.num_states = len(self.states)
@@ -109,7 +109,7 @@ class QLearning(object):
         print("initialized")
         # while not self.converged and self.iterations < self.epochs:
         while self.iterations < self.epochs:
-            print("iteration: ", self.iterations)
+            # print("iteration: ", self.iterations)
             valid_actions = self.select_valid_actions()
             # no valid actions
             if len(valid_actions) == 0:
@@ -129,6 +129,12 @@ class QLearning(object):
             curr_q = copy.deepcopy(self.q_matrix[self.curr_state][selected_action["action_idx"]])
             q_update = self.lr * (r_t + self.dr * max_a_Q - curr_q)
             self.q_matrix[self.curr_state][selected_action["action_idx"]] += q_update
+            if self.q_matrix[self.curr_state][selected_action["action_idx"]] > 100:
+                print("Over 100 at iteration", self.iterations)
+                print("rt:", r_t, "max_a_Q:", max_a_Q, "curr_q:", curr_q, "curr_state:", self.curr_state, selected_action)
+            elif self.q_matrix[self.curr_state][selected_action["action_idx"]] == 100:
+                print("At 100 at iteration:", self.iterations)
+                print("rt:", r_t, "max_a_Q:", max_a_Q, "curr_q:", curr_q, "curr_state:", self.curr_state, selected_action)
             self.iterations += 1
             self.curr_state = next_state
             # if self.check_converged(curr_q, selected_action):
@@ -141,7 +147,7 @@ class QLearning(object):
 
     def reset_positions(self):
         # pass
-        print("reset positions")
+        # print("reset positions")
         self.curr_state = 0
         return 
 
@@ -173,7 +179,7 @@ class QLearning(object):
         # pass
         # string robot_object
         # int16 tag_id
-        print("sel act:", selected_action)
+        # print("sel act:", selected_action)
         color, tag = self.get_action_details(selected_action)
         message = RobotMoveObjectToTag(
             robot_object = color, 
@@ -184,7 +190,7 @@ class QLearning(object):
 
 
     def get_action_details(self, selected_action):
-        print(type(selected_action["action_idx"]), selected_action["action_idx"])
+        # print(type(selected_action["action_idx"]), selected_action["action_idx"])
         action_deets = self.actions[selected_action["action_idx"]]
         color = action_deets["object"]
         tag = action_deets["tag"]
@@ -194,7 +200,7 @@ class QLearning(object):
     def get_reward(self, data):     # data: QLearningReward
         # pass
         # what publishes the rewards to "/q_learning/reward"
-        print("reward:", data.reward)
+        # print("reward:", data.reward)
         self.curr_reward = data.reward
         return 
 
