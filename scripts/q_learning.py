@@ -55,7 +55,7 @@ class QLearning(object):
         # Hyperparameters and Macros
         self.lr = 1.0
         self.dr = 0.8
-        self.epochs = 75000
+        self.epochs = 5000
         self.converged = False
         self.iterations = 0
         self.num_states = len(self.states)
@@ -107,8 +107,8 @@ class QLearning(object):
             return 
 
         print("initialized")
-        # while not self.converged and self.iterations < self.epochs:
-        while self.iterations < self.epochs:
+        while not self.converged and self.iterations < self.epochs:
+        # while self.iterations < self.epochs:
             # print("iteration: ", self.iterations)
             valid_actions = self.select_valid_actions()
             # no valid actions
@@ -120,6 +120,10 @@ class QLearning(object):
             selected_action = random.choice(valid_actions, size=1)[0]  #next state index, action of to get there index
             # perform action
             self.perform_action(selected_action)
+
+            # give time for the subscriber to receive the reward
+            rospy.sleep(0.5)
+
             # get reward
             r_t = self.curr_reward
 
@@ -137,25 +141,20 @@ class QLearning(object):
                 print("rt:", r_t, "max_a_Q:", max_a_Q, "curr_q:", curr_q, "curr_state:", self.curr_state, selected_action)
             self.iterations += 1
             self.curr_state = next_state
-            # if self.check_converged(curr_q, selected_action):
-            #     self.converged = True
-            #     self.save_q_matrix()
+            if self.check_converged(curr_q, selected_action):
+                self.converged = True
+                print("CONVERGED at iteration", self.iterations)
+                self.save_q_matrix()
         self.save_q_matrix()
-
-            
 
 
     def reset_positions(self):
-        # pass
-        # print("reset positions")
         self.curr_state = 0
         return 
 
 
     def select_valid_actions(self):
-        # pass
         row_num = self.curr_state
-        # all_actions = self.action_matrix[row_num]
         valid_actions = [] 
         for i, action in enumerate(self.action_matrix[row_num]):
             if action != -1:
@@ -164,22 +163,17 @@ class QLearning(object):
         
 
     def check_converged(self, curr_q, selected_action):
-        # pass
         delta_q = abs(curr_q - self.q_matrix[self.curr_state][selected_action["action_idx"]])
         if delta_q < self.converge_threshold:
             self.num_of_continuous_below_thresh += 1
         else:
             self.num_of_continuous_below_thresh = 0
-        if self.num_of_continuous_below_thresh >= 10:
+        if self.num_of_continuous_below_thresh >= 100:
             return True
         return False
         
 
     def perform_action(self, selected_action):
-        # pass
-        # string robot_object
-        # int16 tag_id
-        # print("sel act:", selected_action)
         color, tag = self.get_action_details(selected_action)
         message = RobotMoveObjectToTag(
             robot_object = color, 
@@ -190,7 +184,6 @@ class QLearning(object):
 
 
     def get_action_details(self, selected_action):
-        # print(type(selected_action["action_idx"]), selected_action["action_idx"])
         action_deets = self.actions[selected_action["action_idx"]]
         color = action_deets["object"]
         tag = action_deets["tag"]
@@ -199,8 +192,6 @@ class QLearning(object):
 
     def get_reward(self, data):     # data: QLearningReward
         # pass
-        # what publishes the rewards to "/q_learning/reward"
-        # print("reward:", data.reward)
         self.curr_reward = data.reward
         return 
 
