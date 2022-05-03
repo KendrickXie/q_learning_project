@@ -75,26 +75,6 @@ class QLearning(object):
         self.q_matrix_publisher = rospy.Publisher("/q_learning/q_matrix", QMatrix, queue_size=10)
 
 
-        '''
-        pseudocode:
-
-        initialize_q_mat()      # initialize to 0s 
-        while !self.converged and self.iterations < self.epoch:     # stop when converged or hit max epochs to prevent infinite loops (?)
-            select random valid action      # select non "-1" values from action_matrix. 
-                -> 
-            perform action
-            receive reward 
-            update Q mat
-                -> how to identify next S_t+1? 
-                -> need to track curr state to get S_t+1? 
-                -> LR should be 1? Too large will overshoot? 
-            self.iterations += 1
-        
-        if self.converged:
-            save_q_matrix()
-
-        '''
-
         rospy.sleep(2)
 
         self.initialized = True
@@ -109,7 +89,6 @@ class QLearning(object):
         print("initialized")
         while not self.converged and self.iterations < self.epochs:
         # while self.iterations < self.epochs:
-            # print("iteration: ", self.iterations)
             valid_actions = self.select_valid_actions()
             # no valid actions
             if len(valid_actions) == 0:
@@ -122,7 +101,7 @@ class QLearning(object):
             self.perform_action(selected_action)
 
             # give time for the subscriber to receive the reward
-            rospy.sleep(0.5)
+            rospy.sleep(0.25)
 
             # get reward
             r_t = self.curr_reward
@@ -133,19 +112,14 @@ class QLearning(object):
             curr_q = copy.deepcopy(self.q_matrix[self.curr_state][selected_action["action_idx"]])
             q_update = self.lr * (r_t + self.dr * max_a_Q - curr_q)
             self.q_matrix[self.curr_state][selected_action["action_idx"]] += q_update
-            if self.q_matrix[self.curr_state][selected_action["action_idx"]] > 100:
-                print("Over 100 at iteration", self.iterations)
-                print("rt:", r_t, "max_a_Q:", max_a_Q, "curr_q:", curr_q, "curr_state:", self.curr_state, selected_action)
-            elif self.q_matrix[self.curr_state][selected_action["action_idx"]] == 100:
-                print("At 100 at iteration:", self.iterations)
-                print("rt:", r_t, "max_a_Q:", max_a_Q, "curr_q:", curr_q, "curr_state:", self.curr_state, selected_action)
-            self.iterations += 1
-            self.curr_state = next_state
             if self.check_converged(curr_q, selected_action):
                 self.converged = True
                 print("CONVERGED at iteration", self.iterations)
                 self.save_q_matrix()
-        self.save_q_matrix()
+            self.iterations += 1
+            self.curr_state = next_state
+        
+        print("NOT CONVERGED")
 
 
     def reset_positions(self):
@@ -199,10 +173,9 @@ class QLearning(object):
         # TODO: You'll want to save your q_matrix to a file once it is done to
         # avoid retraining
         print("saving q_matrix")
-        np.savetxt(path_prefix + "q_matrix.txt", self.q_matrix)
+        np.savetxt(path_prefix + "converged_q_matrix.csv", self.q_matrix, delimiter = ",")
         return
 
 if __name__ == "__main__":
-    print("hi")
     node = QLearning()
     node.train()
