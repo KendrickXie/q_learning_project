@@ -88,14 +88,14 @@ class QLearning(object):
 
         print("initialized")
         while not self.converged and self.iterations < self.epochs:
-        # while self.iterations < self.epochs:
+            # select list of valid actions for current state
             valid_actions = self.select_valid_actions()
-            # no valid actions
+            # no valid actions, so reset positions and increase iterations
             if len(valid_actions) == 0:
                 self.reset_positions()
                 self.iterations += 1
                 continue
-            # received candidate actions
+            # received candidate actions, choose one random candidate
             selected_action = random.choice(valid_actions, size=1)[0]  #next state index, action of to get there index
             # perform action
             self.perform_action(selected_action)
@@ -118,15 +118,17 @@ class QLearning(object):
                 self.save_q_matrix()
             self.iterations += 1
             self.curr_state = next_state
-        
-        print("NOT CONVERGED")
+        if not self.converged:
+            print("NOT CONVERGED")
 
 
+    # reset positions to the state where all objects are at the origin
     def reset_positions(self):
         self.curr_state = 0
         return 
 
 
+    # get a list of valid actions from current state's row in the action matrix
     def select_valid_actions(self):
         row_num = self.curr_state
         valid_actions = [] 
@@ -136,6 +138,7 @@ class QLearning(object):
         return valid_actions
         
 
+    # check Q-matrix for convergence
     def check_converged(self, curr_q, selected_action):
         delta_q = abs(curr_q - self.q_matrix[self.curr_state][selected_action["action_idx"]])
         if delta_q < self.converge_threshold:
@@ -147,6 +150,7 @@ class QLearning(object):
         return False
         
 
+    # perform an action by publishing to "/q_learning/robot_action"
     def perform_action(self, selected_action):
         color, tag = self.get_action_details(selected_action)
         message = RobotMoveObjectToTag(
@@ -157,6 +161,7 @@ class QLearning(object):
         return
 
 
+    # get the color and tag associated with an action
     def get_action_details(self, selected_action):
         action_deets = self.actions[selected_action["action_idx"]]
         color = action_deets["object"]
@@ -164,14 +169,15 @@ class QLearning(object):
         return color, tag
 
 
+    # callback function to retreive the reward published by "/q_learning/reward"
     def get_reward(self, data):     # data: QLearningReward
         # pass
         self.curr_reward = data.reward
         return 
 
+    
+    # save the Q-matrix
     def save_q_matrix(self):
-        # TODO: You'll want to save your q_matrix to a file once it is done to
-        # avoid retraining
         print("saving q_matrix")
         np.savetxt(path_prefix + "converged_q_matrix.csv", self.q_matrix, delimiter = ",")
         return
