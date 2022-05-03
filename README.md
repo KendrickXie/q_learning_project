@@ -35,3 +35,16 @@ We plan on meeting up over weekends to test, while spending weekdays implementin
 5/10: Be ready for final polish
 
 5/12: Everything due
+
+## Writeup
+### Objectives Description:
+The goal of this project was to use Q-learning to give a robot the ability to place objects in the correct position (positions that yield the highest reward). The project also involves implementing detection of objects to pick up and AR tags to place objects in front of. The last part of the project involves manipulating a robot’s arm to pick up the objects, navigating to the location where they are to be dropped off, and dropping the object from the robot’s arm.
+### High-Level Description:
+Given a current state, the robot will select a random possible next action. After the robot has performed the selected action and received its reward, the current (state+action)’s Q value will be updated to account for its current reward and max possible reward of the next state. For our specific task of determining where colored objects belong, this means for all 64 possible states, there will be rewards for the nine possible actions that can be performed.
+### Q-learning Algorithm Description:
+#### Selecting and executing actions for the robot (or phantom robot) to take
+We selected a series of valid actions by referencing the action matrix row corresponding to the current state (initialized to 0). We picked out the ones that were not -1 and saved the resulting state and action index information in a dictionary obj. From this list of valid actions, we selected one at random using np.random.choice. I do want to note that when no valid states are available at the current state, we will reset the current state to 0. 
+#### Updating the Q-matrix
+Retrieved the reward after sleeping for 0.25 after performing the action. We then implemented the algorithm provided in the project spec - using a LR of 1.0, DR of 0.8, selecting the max Q value for the next state and a negative current state Q value to create the update factor that was then added to the current state Q value. 
+#### Determining when to stop iterating: 
+We stop iterating once we observe 100 consecutive iterations in which the Q value updates are less than a threshold value of 0.1 (which could technically be 0 in this case) but we’re using a threshold value for the sake of generalizability (in future work). We erred on the safe side by waiting to declare a convergence after 100 consecutive iterations. 
