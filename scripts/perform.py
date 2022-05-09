@@ -12,6 +12,7 @@ from geometry_msgs.msg import Twist, Vector3
 import cv2, cv_bridge
 import moveit_commander
 import math
+from sensor_msgs.msg import LaserScan
 
 # Path of directory on where this file is located
 path_prefix = os.path.dirname(__file__) + "/action_states/"
@@ -57,7 +58,8 @@ class Perform(object):
         self.states = list(map(lambda x: list(map(lambda y: int(y), x)), self.states))
         
         # read in our trained q_matrix
-        self.q_matrix = np.loadtxt(path_prefix + "converged_q_matrix.csv", dtype=int)
+        # TODO: read in csv with proper types
+        # self.q_matrix = np.loadtxt(path_prefix + "converged_q_matrix.csv", dtype=int)
 
         # set up ROS / OpenCV bridge
         self.bridge = cv_bridge.CvBridge()
@@ -80,16 +82,16 @@ class Perform(object):
         ang = Vector3()
         self.twist = Twist(linear=lin,angular=ang)
 
-        # the interface to the group of joints making up the turtlebot3
-        # openmanipulator arm
-        self.move_group_arm = moveit_commander.MoveGroupCommander("arm")
+        # # the interface to the group of joints making up the turtlebot3
+        # # openmanipulator arm
+        # self.move_group_arm = moveit_commander.MoveGroupCommander("arm")
 
-        # the interface to the group of joints making up the turtlebot3
-        # openmanipulator gripper
-        self.move_group_gripper = moveit_commander.MoveGroupCommander("gripper")
+        # # the interface to the group of joints making up the turtlebot3
+        # # openmanipulator gripper
+        # self.move_group_gripper = moveit_commander.MoveGroupCommander("gripper")
 
         # Reset arm position
-        self.move_group_arm.go([0,0,0,0], wait=True)
+        # self.move_group_arm.go([0,0,0,0], wait=True)
 
         # Alex
 
@@ -101,13 +103,16 @@ class Perform(object):
 
 
         # Kendrick
+        self.lidar_subscriber = rospy.Subscriber("/scan", LaserScan, self.lidar_callback)
+
         self.search_for_tag = False
         self.aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_50)
         self.img_center_x = 0
-        self.grayscale_img
+        self.grayscale_img = None
         self.closest_range_in_front = 0
-        self.closest_distance_allowed = 0.5
+        self.closest_distance_allowed = 0.6
         self.goal_id = 0
+        self.ar_tag_found = False
 
 
 
@@ -120,8 +125,12 @@ class Perform(object):
         #select_action
 
         # when looking for tag set goal_id and set search_for_tag to True
-        self.goal_id = 1
+        self.goal_id = 2
         self.search_for_tag = True
+
+        # Keep the program alive.
+        # node.stop()
+        rospy.spin()
 
     # find object and move to it
     def find_object(self): #Alex
@@ -133,6 +142,7 @@ class Perform(object):
         curr_center_x = 0
         # verify *at least* one ArUco marker was detected
         if len(corners) > 0:
+            print("found tag")
             # flatten the ArUco IDs list
             ids = ids.flatten()
             # loop over the detected ArUCo corners
@@ -151,25 +161,42 @@ class Perform(object):
                 width = int(bottomRight[0]) - int(bottomLeft[0])
                 curr_center_x = int(bottomLeft[0]) + (width / 2)
         print(curr_center_x)
-        if curr_center_x == 0:
+        if curr_center_x == 0 and not self.ar_tag_found:
             #turn more until another tag
-            self.twist.angular.z = 0.2
+            # TODO: uncomment this later
+            self.twist.angular.z = 0.5
             self.twist.linear.x = 0.0
-        else:
-            k = 0.5
-            e = self.img_center_x - curr_center_x
-            self.twist.angular.z = k * e
-
+            print("no tag found")
+            print("closest range:", self.closest_range_in_front)
+        elif curr_center_x == 0 and self.ar_tag_found:
+            self.twist.linear.x = 0.0
+            self.twist.angular.z = 0.0
+            # self.put_down
             if self.closest_distance_allowed < self.closest_range_in_front:
+                print("moving forward")
                 self.twist.linear.x = 0.1
             else:
+                self.search_for_tag = False
+                self.ar_tag_found = False
+        else:
+            k = 0.01
+            e = self.img_center_x - curr_center_x
+            self.twist.angular.z = k * e
+            self.ar_tag_found = True
+            if self.closest_distance_allowed < self.closest_range_in_front:
+                print("moving forward")
+                self.twist.linear.x = 0.1
+            else:
+                print("too close")
+                print("closest range:", self.closest_range_in_front)
                 self.twist.linear.x = 0.0
                 self.twist.angular.z = 0.0
                 # self.put_down
                 self.search_for_tag = False
+                
 
         # Publish the Twist message
-        self.twist_pub.publish(self.twist)
+        self.twist_publisher.publish(self.twist)
 
 
 
@@ -189,14 +216,35 @@ class Perform(object):
         pass
 
     def image_callback(self, msg):
+        # print("doing image callback")
         if self.search_for_tag:
             # converts the incoming ROS message to OpenCV format and grayscale
             self.grayscale_img = self.bridge.imgmsg_to_cv2(msg,desired_encoding='mono8')
 
             # find the x coordinate of the center of the image
-            h, w, d = self.grayscale_img.shape
+            h, w = self.grayscale_img.shape
             self.img_center_x = w / 2
+            print("searching for tag")
             self.find_tag()
 
+    def lidar_callback(self, msg):
+        # print("doing lidar callback")
+        closest_range = 100
+        angle = 0
+        for angle_range in msg.ranges:
+            if angle < 45 or angle > 315:
+                if angle_range < closest_range and not angle_range == 0:
+                    closest_range = angle_range
+            angle = angle + 1
+        self.closest_range_in_front = closest_range
 
-        
+    def stop(self):
+        self.twist.linear.x = 0.0
+        self.twist.angular.z = 0.0
+        self.twist_publisher.publish(self.twist)
+
+if __name__ == '__main__':
+    # declare the ROS node and run it
+    node = Perform()
+    print("running")
+    node.run()
