@@ -101,9 +101,13 @@ class Perform(object):
 
 
         # Kendrick
-
-
-
+        self.search_for_tag = False
+        self.aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_50)
+        self.img_center_x = 0
+        self.grayscale_img
+        self.closest_range_in_front = 0
+        self.closest_distance_allowed = 0.5
+        self.goal_id = 0
 
 
 
@@ -115,15 +119,66 @@ class Perform(object):
     def run(self):
         #select_action
 
+        # when looking for tag set goal_id and set search_for_tag to True
+        self.goal_id = 1
+        self.search_for_tag = True
+
     # find object and move to it
     def find_object(self): #Alex
+        pass
     
     # find tag and move to it
     def find_tag(self): #Kendrick
+        corners, ids, rejected_points = cv2.aruco.detectMarkers(self.grayscale_img, self.aruco_dict)
+        curr_center_x = 0
+        # verify *at least* one ArUco marker was detected
+        if len(corners) > 0:
+            # flatten the ArUco IDs list
+            ids = ids.flatten()
+            # loop over the detected ArUCo corners
+            for (markerCorner, markerID) in zip(corners, ids):
+                if not markerID == self.goal_id:
+                    continue
+                # extract the marker corners (which are always returned in
+                # top-left, top-right, bottom-right, and bottom-left order)
+                corners = markerCorner.reshape((4, 2))
+                (topLeft, topRight, bottomRight, bottomLeft) = corners
+                # convert each of the (x, y)-coordinate pairs to integers
+                topRight = (int(topRight[0]), int(topRight[1]))
+                bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
+                bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
+                topLeft = (int(topLeft[0]), int(topLeft[1]))
+                width = int(bottomRight[0]) - int(bottomLeft[0])
+                curr_center_x = int(bottomLeft[0]) + (width / 2)
+        print(curr_center_x)
+        if curr_center_x == 0:
+            #turn more until another tag
+            self.twist.angular.z = 0.2
+            self.twist.linear.x = 0.0
+        else:
+            k = 0.5
+            e = self.img_center_x - curr_center_x
+            self.twist.angular.z = k * e
 
+            if self.closest_distance_allowed < self.closest_range_in_front:
+                self.twist.linear.x = 0.1
+            else:
+                self.twist.linear.x = 0.0
+                self.twist.angular.z = 0.0
+                # self.put_down
+                self.search_for_tag = False
+
+        # Publish the Twist message
+        self.twist_pub.publish(self.twist)
+
+
+
+                
     def pick_up(self): #Alex
-
+        pass
+    
     def put_down(self): #Kendrick
+        pass
 
     def select_action(self): #Alex
         # publish action
@@ -131,6 +186,17 @@ class Perform(object):
     
     # callback function for when we publish an action
     def action_callback(self, msg):
-        
-    def image_callback(self, msg):
         pass
+
+    def image_callback(self, msg):
+        if self.search_for_tag:
+            # converts the incoming ROS message to OpenCV format and grayscale
+            self.grayscale_img = self.bridge.imgmsg_to_cv2(msg,desired_encoding='mono8')
+
+            # find the x coordinate of the center of the image
+            h, w, d = self.grayscale_img.shape
+            self.img_center_x = w / 2
+            self.find_tag()
+
+
+        
