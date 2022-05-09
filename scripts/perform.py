@@ -7,8 +7,11 @@ import copy
 
 from numpy import random
 from q_learning_project.msg import QLearningReward, QMatrix, QMatrixRow, RobotMoveObjectToTag
-
+from sensor_msgs.msg import Image
+from geometry_msgs.msg import Twist, Vector3
 import cv2, cv_bridge
+import moveit_commander
+import math
 
 # Path of directory on where this file is located
 path_prefix = os.path.dirname(__file__) + "/action_states/"
@@ -56,6 +59,9 @@ class Perform(object):
         # read in our trained q_matrix
         self.q_matrix = np.loadtxt(path_prefix + "converged_q_matrix.csv", dtype=int)
 
+        # set up ROS / OpenCV bridge
+        self.bridge = cv_bridge.CvBridge()
+
 
         self.current_state = 0
 
@@ -63,12 +69,68 @@ class Perform(object):
 
         # publishers and subscribers
         self.action_publisher = rospy.Publisher("/q_learning/robot_action", RobotMoveObjectToTag, queue_size=10)
-        self.action_subscriber = rospy.Subscriber("/q_learning/robot_action", RobotMoveObjectToTag, queue_size=10)
-        
+        self.action_subscriber = rospy.Subscriber("/q_learning/robot_action", RobotMoveObjectToTag, self.action_callback)
+        # subscribe to the robot's RGB camera data stream
+        self.image_subscriber = rospy.Subscriber('camera/rgb/image_raw', Image, self.image_callback)
+        self.twist_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+
+
+        # create a default twist msg with values of all zeros
+        lin = Vector3()
+        ang = Vector3()
+        self.twist = Twist(linear=lin,angular=ang)
+
+        # the interface to the group of joints making up the turtlebot3
+        # openmanipulator arm
+        self.move_group_arm = moveit_commander.MoveGroupCommander("arm")
+
+        # the interface to the group of joints making up the turtlebot3
+        # openmanipulator gripper
+        self.move_group_gripper = moveit_commander.MoveGroupCommander("gripper")
+
+        # Reset arm position
+        self.move_group_arm.go([0,0,0,0], wait=True)
+
+        # Alex
+
+
+
+
+
+
+
+
+        # Kendrick
+
+
+
+
+
+
+
+
 
         rospy.sleep(2)
 
-    def select_action(self):
-        pass
+    def run(self):
+        #select_action
 
+    # find object and move to it
+    def find_object(self): #Alex
     
+    # find tag and move to it
+    def find_tag(self): #Kendrick
+
+    def pick_up(self): #Alex
+
+    def put_down(self): #Kendrick
+
+    def select_action(self): #Alex
+        # publish action
+        pass
+    
+    # callback function for when we publish an action
+    def action_callback(self, msg):
+        
+    def image_callback(self, msg):
+        pass
