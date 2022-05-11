@@ -100,8 +100,8 @@ class Perform(object):
         self.scan_subscriber = rospy.Subscriber('/scan', LaserScan, self.scan_callback)
         self.target_color = None
         self.target_tag = None
-        self.ang_complete = False
-        self.lin_complete = False
+        self.ang_complete = True
+        self.lin_complete = True
         self.stop_threshold = 0.25
 
 
@@ -115,11 +115,9 @@ class Perform(object):
 
         self.search_for_tag = False
         self.aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_50)
-        self.img_center_x = 0
         self.grayscale_img = None
         self.closest_range_in_front = 0
-        self.closest_distance_allowed = 0.6
-        self.goal_id = 0
+        self.closest_distance_allowed = 0.25
         self.ar_tag_found = False
 
         self.arm_up = [0,math.radians(-50),0,0]
@@ -144,10 +142,26 @@ class Perform(object):
         rospy.sleep(5)
 
     def run(self):
-        #select_action
-        self.select_action()
-        rospy.sleep(1)
-        self.find_object()
+        while True:
+            #select_action
+            if self.ang_complete and self.lin_complete:
+                self.select_action()
+                rospy.sleep(1)
+            self.find_object()
+            if not self.ang_complete or not self.lin_complete:
+                continue
+            self.pick_up()
+            # self.ang_complete = False
+            # self.lin_complete = False
+            rospy.sleep(1)
+            self.turn_around()
+            rospy.sleep(1)
+            self.find_tag()
+            rospy.sleep(1)
+            self.put_down()
+            rospy.sleep(1)
+            self.turn_around()
+
 
 
         # # when looking for tag set goal_id and set search_for_tag to True
@@ -181,10 +195,13 @@ class Perform(object):
 
         mask = None
         if self.current_action.robot_object == "pink":
+            print("pink mask")
             mask = cv2.inRange(hsv, lower_pink, upper_pink)
         elif self.current_action.robot_object == "green":
+            print("green mask")
             mask = cv2.inRange(hsv, lower_green, upper_green)
         elif self.current_action.robot_object == "blue":
+            print("blue mask")
             mask = cv2.inRange(hsv, lower_blue, upper_blue)
         else:
             print("Error with current_action robot_object")
@@ -204,38 +221,61 @@ class Perform(object):
 
             cv2.circle(self.image, (cx, cy), 20, (0,0,255), -1)
 
-            kp_ang = 0.05
+            kp_ang = 0.01
             ang_err = (cx - w/2)
             # adjusting robo ang
-            while abs(ang_err) > 10:
-                velo = Twist(
-                    linear = Vector3(0,0,0),
-                    angular = Vector3(0,0,kp_ang*ang_err)
-                )
-                self.velo_publisher.publish(velo)
-            self.ang_complete = True
+            if not self.ang_complete:
+                # adjust tolerance 
+                if abs(ang_err) > 10:
+                    velo = Twist(
+                        linear = Vector3(0,0,0),
+                        angular = Vector3(0,0,kp_ang*ang_err)
+                    )
+                    self.velo_publisher.publish(velo)
+                    return
+                else:
+                    self.stop()
+                    self.ang_complete = True
+                    print("Ang Adjustment Completed!")
             # adjusting robo dist
-            curr_dist = self.get_smoothed_dist(2)
-            kp_lin = 0.25
-            while curr_dist > self.stop_threshold:
+            if not self.lin_complete:
                 curr_dist = self.get_smoothed_dist(2)
-                lin_err = self.stop_threshold - curr_dist
-                velo = Twist(
-                    linear = Vector3(kp_lin*lin_err,0,0),
-                    angular = Vector3(0,0,0)
-                )
-                self.velo_publisher.publish(velo)
-            self.lin_complete = True
+                kp_lin = 0.1
+                if curr_dist > self.stop_threshold:
+                    lin_err = curr_dist - self.stop_threshold
+                    velo = Twist(
+                        linear = Vector3(kp_lin*lin_err,0,0),
+                        angular = Vector3(0,0,0)
+                    )
+                    self.velo_publisher.publish(velo)
+                    return
+                else:
+                    self.stop()
+                    self.lin_complete = True
+                    print("Lin Adjustment Completed!")
 
         # shows the debugging window
         # hint: you might want to disable this once you're able to get a red circle in the debugging window
         cv2.imshow("window", self.image)
         cv2.waitKey(3)
 
+    def stop(self):
+        velo = Twist(
+            linear = Vector3(0,0,0),
+            angular = Vector3(0,0,0)
+        )
+        self.velo_publisher.publish(velo)
 
     
     # find tag and move to it
     def find_tag(self): #Kendrick
+        # find the x coordinate of the center of the image
+        h, w = self.grayscale_img.shape
+        img_center_x = w / 2
+        print("searching for tag")
+        
+        # set goal id
+        goal_id = self.current_action.tag_id
         # extract tag parameters
         corners, ids, rejected_points = cv2.aruco.detectMarkers(self.grayscale_img, self.aruco_dict)
         curr_center_x = 0
@@ -247,7 +287,7 @@ class Perform(object):
             # loop over detected tag corners
             for (markerCorner, markerID) in zip(corners, ids):
                 # skip if we are not looking for this tag
-                if not markerID == self.goal_id:
+                if not markerID == goal_id:
                     continue
                 # extract the marker corners (which are always returned in
                 # top-left, top-right, bottom-right, and bottom-left order)
@@ -282,7 +322,7 @@ class Perform(object):
         else:
             # turn robot towards tag and move forward
             k = 0.01
-            e = self.img_center_x - curr_center_x
+            e = img_center_x - curr_center_x
             self.twist.angular.z = k * e
             self.ar_tag_found = True
             if self.closest_distance_allowed < self.closest_range_in_front:
@@ -328,6 +368,9 @@ class Perform(object):
 
     def select_action(self): #Alex
         # publish action
+        print("Selecting action...")
+        self.ang_complete = False
+        self.lin_complete = False
         max_q_val_for_state = max(self.q_matrix[self.current_state])
         actions = [i for i, q_val in enumerate(self.q_matrix[self.current_state]) if q_val == max_q_val_for_state]
         selected_action_idx = random.choice(actions)
@@ -340,6 +383,7 @@ class Perform(object):
     
     # perform an action by publishing to "/q_learning/robot_action"
     def perform_action(self, selected_action):
+        print("Performing action...")
         color, tag = self.get_action_details(selected_action)
         message = RobotMoveObjectToTag(
             robot_object = color, 
@@ -356,16 +400,9 @@ class Perform(object):
 
     def image_callback(self, msg):
         self.image = self.bridge.imgmsg_to_cv2(msg,desired_encoding='bgr8')
-        # if searching for a tag, call the function to find a tag
-        if self.search_for_tag:
-            # converts the incoming ROS message to OpenCV format and grayscale
-            self.grayscale_img = self.bridge.imgmsg_to_cv2(msg,desired_encoding='mono8')
 
-            # find the x coordinate of the center of the image
-            h, w = self.grayscale_img.shape
-            self.img_center_x = w / 2
-            print("searching for tag")
-            self.find_tag()
+        # converts the incoming ROS message to OpenCV format and grayscale
+        self.grayscale_img = self.bridge.imgmsg_to_cv2(msg,desired_encoding='mono8')
 
     def lidar_callback(self, msg):
         self.scan_ranges = msg
@@ -387,6 +424,7 @@ class Perform(object):
         return smoothed_dist
 
     def turnaround(self):
+        print("Turning around...")
         velo = Twist(
             linear = Vector3(0,0,0),
             angular = Vector3(0,0,0.785398) #45 deg in rad
