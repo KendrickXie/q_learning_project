@@ -12,6 +12,7 @@ from geometry_msgs.msg import Twist, Vector3
 import cv2, cv_bridge
 import moveit_commander
 import math
+from sensor_msgs.msg import LaserScan
 
 # Path of directory on where this file is located
 path_prefix = os.path.dirname(__file__) + "/action_states/"
@@ -57,18 +58,20 @@ class Perform(object):
         self.states = list(map(lambda x: list(map(lambda y: int(y), x)), self.states))
         
         # read in our trained q_matrix
-        self.q_matrix = np.loadtxt(path_prefix + "converged_q_matrix.csv", dtype=int)
+        # TODO: read in csv with proper types
+        # self.q_matrix = np.loadtxt(path_prefix + "converged_q_matrix.csv", dtype=int)
 
         # set up ROS / OpenCV bridge
         self.bridge = cv_bridge.CvBridge()
 
-        # current state 
+        # set current state
         self.current_state = 0
 
         # current action from action subscriber -> RobotMoveObjectToTag object
         # string robot_object
         # int16 tag_id
         self.current_action = None
+        
 
         # publishers and subscribers
         self.action_publisher = rospy.Publisher("/q_learning/robot_action", RobotMoveObjectToTag, queue_size=10)
@@ -91,9 +94,8 @@ class Perform(object):
         # openmanipulator gripper
         self.move_group_gripper = moveit_commander.MoveGroupCommander("gripper")
 
-        # Reset arm position
-        self.move_group_arm.go([0,0,0,0], wait=True)
-
+        
+        
         # Alex
         self.scan_subscriber = rospy.Subscriber('/scan', LaserScan, self.scan_callback)
         self.target_color = None
@@ -107,27 +109,59 @@ class Perform(object):
 
 
 
+
         # Kendrick
+        self.lidar_subscriber = rospy.Subscriber("/scan", LaserScan, self.lidar_callback)
+
+        self.search_for_tag = False
+        self.aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_50)
+        self.img_center_x = 0
+        self.grayscale_img = None
+        self.closest_range_in_front = 0
+        self.closest_distance_allowed = 0.6
+        self.goal_id = 0
+        self.ar_tag_found = False
+
+        self.arm_up = [0,math.radians(-50),0,0]
+        self.arm_down = [
+            0.0,
+            math.radians(5.0),
+            math.radians(20.0),
+            math.radians(-20.0)
+        ]
+
+        self.open_grip = [0.015,0.015]
+        self.close_grip = [0.0001,0.0001]
+
+        # set arm to upward position
+        self.move_group_arm.go(self.arm_up, wait=True)
+
+        # set gripper to open position
+        self.move_group_gripper.go(self.open_grip, wait=True)
 
 
 
-
-
-
-
-
-
-        rospy.sleep(2)
+        rospy.sleep(5)
 
     def run(self):
         #select_action
-        # pass
         self.select_action()
         rospy.sleep(1)
         self.find_object()
-        # if ang_complete == True and lin_complete == True
-        # pick_up()
-        # turn around 
+
+
+        # # when looking for tag set goal_id and set search_for_tag to True
+        # self.goal_id = 2
+        # self.search_for_tag = False
+        # self.pick_up()
+        # print("pick_up executed")
+        # rospy.sleep(3)
+        # self.put_down()
+        # print("put_down executed")
+
+
+        # # Keep the program alive.
+        # rospy.spin()
 
     # find object and move to it
     def find_object(self): #Alex
@@ -144,7 +178,7 @@ class Perform(object):
         lower_blue = np.array([90, 85, 100])
         # 210, 75, 85
         upper_blue = np.array([105, 140, 240])
-        
+
         mask = None
         if self.current_action.robot_object == "pink":
             mask = cv2.inRange(hsv, lower_pink, upper_pink)
@@ -155,7 +189,7 @@ class Perform(object):
         else:
             print("Error with current_action robot_object")
             return
-        
+
         h, w, c = self.image.shape   # height, width, channel
 
         # https://www.pythonpool.com/opencv-moments/
@@ -202,17 +236,98 @@ class Perform(object):
     
     # find tag and move to it
     def find_tag(self): #Kendrick
-        pass
+        # extract tag parameters
+        corners, ids, rejected_points = cv2.aruco.detectMarkers(self.grayscale_img, self.aruco_dict)
+        curr_center_x = 0
+        # check that a tag if found
+        if len(corners) > 0:
+            print("found tag")
+            # flatten the ArUco IDs list
+            ids = ids.flatten()
+            # loop over detected tag corners
+            for (markerCorner, markerID) in zip(corners, ids):
+                # skip if we are not looking for this tag
+                if not markerID == self.goal_id:
+                    continue
+                # extract the marker corners (which are always returned in
+                # top-left, top-right, bottom-right, and bottom-left order)
+                corners = markerCorner.reshape((4, 2))
+                (topLeft, topRight, bottomRight, bottomLeft) = corners
+                # convert each of the (x, y)-coordinate pairs to integers
+                # topRight = (int(topRight[0]), int(topRight[1]))
+                # bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
+                # bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
+                # topLeft = (int(topLeft[0]), int(topLeft[1]))
+                # find the x coordinate of the center of the tag
+                width = int(bottomRight[0]) - int(bottomLeft[0])
+                curr_center_x = int(bottomLeft[0]) + (width / 2)
 
+        if curr_center_x == 0 and not self.ar_tag_found:
+            # turn until a tag is found
+            self.twist.angular.z = 0.5
+            self.twist.linear.x = 0.0
+        elif curr_center_x == 0 and self.ar_tag_found:
+            # stop once an tag was found and the tag is to close for the camera to detect
+            self.twist.linear.x = 0.0
+            self.twist.angular.z = 0.0
+            
+            # if still far from the closest object in the front, keep moving forward
+            if self.closest_distance_allowed < self.closest_range_in_front:
+                print("moving forward")
+                self.twist.linear.x = 0.1
+            else:
+                # self.put_down
+                self.search_for_tag = False
+                self.ar_tag_found = False
+        else:
+            # turn robot towards tag and move forward
+            k = 0.01
+            e = self.img_center_x - curr_center_x
+            self.twist.angular.z = k * e
+            self.ar_tag_found = True
+            if self.closest_distance_allowed < self.closest_range_in_front:
+                print("moving forward")
+                self.twist.linear.x = 0.1
+            # else:
+            #     print("too close")
+            #     print("closest range:", self.closest_range_in_front)
+            #     self.twist.linear.x = 0.0
+            #     self.twist.angular.z = 0.0
+            #     # self.put_down
+            #     self.search_for_tag = False
+                
+
+        # Publish the Twist message
+        self.velo_publisher.publish(self.twist)
+
+
+
+                
     def pick_up(self): #Alex
-        pass
+        # Move the arm down
+        self.move_group_arm.go(self.arm_down, wait=True)
+        rospy.sleep(3)
+        # set gripper to close position
+        self.move_group_gripper.go(self.close_grip, wait=True)
+        rospy.sleep(1)
+        # Move the arm up
+        self.move_group_arm.go(self.arm_up, wait=True)
+        rospy.sleep(3)
 
+    
     def put_down(self): #Kendrick
-        pass
+        # Move the arm down
+        self.move_group_arm.go(self.arm_down, wait=True)
+        rospy.sleep(3)
+        # set gripper to open position
+        self.move_group_gripper.go(self.open_grip, wait=True)
+        rospy.sleep(1)
+        # Move the arm up
+        self.move_group_arm.go(self.arm_up, wait=True)
+        rospy.sleep(3)
 
     def select_action(self): #Alex
         # publish action
-        # pass
         max_q_val_for_state = max(self.q_matrix[self.current_state])
         actions = [i for i, q_val in enumerate(self.q_matrix[self.current_state]) if q_val == max_q_val_for_state]
         selected_action_idx = random.choice(actions)
@@ -222,7 +337,7 @@ class Perform(object):
             if action_taken == selected_action_idx:
                 self.current_state = i
                 break
-
+    
     # perform an action by publishing to "/q_learning/robot_action"
     def perform_action(self, selected_action):
         color, tag = self.get_action_details(selected_action)
@@ -232,20 +347,37 @@ class Perform(object):
         )
         self.action_publisher.publish(message)
         return
-    
+
+
     # callback function for when we publish an action
     def action_callback(self, msg):
-        # pass
         self.current_action = msg
         print("received instructions:", self.current_action)
-    
-    def image_callback(self, msg):
-        # pass
-        self.image = self.bridge.imgmsg_to_cv2(msg,desired_encoding='bgr8')
 
-    def scan_callback(self, msg):
-        # pass
+    def image_callback(self, msg):
+        self.image = self.bridge.imgmsg_to_cv2(msg,desired_encoding='bgr8')
+        # if searching for a tag, call the function to find a tag
+        if self.search_for_tag:
+            # converts the incoming ROS message to OpenCV format and grayscale
+            self.grayscale_img = self.bridge.imgmsg_to_cv2(msg,desired_encoding='mono8')
+
+            # find the x coordinate of the center of the image
+            h, w = self.grayscale_img.shape
+            self.img_center_x = w / 2
+            print("searching for tag")
+            self.find_tag()
+
+    def lidar_callback(self, msg):
         self.scan_ranges = msg
+        # find range of the closest object within the front 90 degrees of the robot
+        closest_range = 100
+        angle = 0
+        for angle_range in msg.ranges:
+            if angle < 45 or angle > 315:
+                if angle_range < closest_range and not angle_range == 0:
+                    closest_range = angle_range
+            angle = angle + 1
+        self.closest_range_in_front = closest_range
 
     def get_smoothed_dist(self, smoothing_factor):
         smoothed_dist = 0
@@ -261,3 +393,10 @@ class Perform(object):
         )
         self.velo_publisher.publish(velo)
         rospy.sleep(4)
+
+
+if __name__ == '__main__':
+    # declare the ROS node and run it
+    node = Perform()
+    print("running")
+    node.run()
