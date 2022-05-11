@@ -156,6 +156,7 @@ class Perform(object):
             rospy.sleep(1)
             self.turnaround()
             rospy.sleep(1)
+            self.search_for_tag = True
             self.find_tag()
             rospy.sleep(1)
             self.put_down()
@@ -272,38 +273,39 @@ class Perform(object):
     
     # find tag and move to it
     def find_tag(self): #Kendrick
-        # find the x coordinate of the center of the image
-        h, w = self.grayscale_img.shape
-        img_center_x = w / 2
-        print("searching for tag")
-        
-        # set goal id
-        goal_id = self.current_action.tag_id
-        # extract tag parameters
-        corners, ids, rejected_points = cv2.aruco.detectMarkers(self.grayscale_img, self.aruco_dict)
-        curr_center_x = 0
-        # check that a tag if found
-        if len(corners) > 0:
-            print("found tag")
-            # flatten the ArUco IDs list
-            ids = ids.flatten()
-            # loop over detected tag corners
-            for (markerCorner, markerID) in zip(corners, ids):
-                # skip if we are not looking for this tag
-                if not markerID == goal_id:
-                    continue
-                # extract the marker corners (which are always returned in
-                # top-left, top-right, bottom-right, and bottom-left order)
-                corners = markerCorner.reshape((4, 2))
-                (topLeft, topRight, bottomRight, bottomLeft) = corners
-                # convert each of the (x, y)-coordinate pairs to integers
-                # topRight = (int(topRight[0]), int(topRight[1]))
-                # bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
-                # bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
-                # topLeft = (int(topLeft[0]), int(topLeft[1]))
-                # find the x coordinate of the center of the tag
-                width = int(bottomRight[0]) - int(bottomLeft[0])
-                curr_center_x = int(bottomLeft[0]) + (width / 2)
+        while self.search_for_tag:
+            # find the x coordinate of the center of the image
+            h, w = self.grayscale_img.shape
+            img_center_x = w / 2
+            print("searching for tag")
+            
+            # set goal id
+            goal_id = self.current_action.tag_id
+            # extract tag parameters
+            corners, ids, rejected_points = cv2.aruco.detectMarkers(self.grayscale_img, self.aruco_dict)
+            curr_center_x = 0
+            # check that a tag if found
+            if len(corners) > 0:
+                print("found tag")
+                # flatten the ArUco IDs list
+                ids = ids.flatten()
+                # loop over detected tag corners
+                for (markerCorner, markerID) in zip(corners, ids):
+                    # skip if we are not looking for this tag
+                    if not markerID == goal_id:
+                        continue
+                    # extract the marker corners (which are always returned in
+                    # top-left, top-right, bottom-right, and bottom-left order)
+                    corners = markerCorner.reshape((4, 2))
+                    (topLeft, topRight, bottomRight, bottomLeft) = corners
+                    # convert each of the (x, y)-coordinate pairs to integers
+                    # topRight = (int(topRight[0]), int(topRight[1]))
+                    # bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
+                    # bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
+                    # topLeft = (int(topLeft[0]), int(topLeft[1]))
+                    # find the x coordinate of the center of the tag
+                    width = int(bottomRight[0]) - int(bottomLeft[0])
+                    curr_center_x = int(bottomLeft[0]) + (width / 2)
 
         if curr_center_x == 0 and not self.ar_tag_found:
             # turn until a tag is found
