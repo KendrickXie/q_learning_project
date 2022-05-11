@@ -119,7 +119,6 @@ class Perform(object):
         self.grayscale_img = None
         self.closest_range_in_front = 0
         self.closest_distance_allowed = 0.6
-        self.goal_id = 0
         self.ar_tag_found = False
 
         self.arm_up = [0,math.radians(-50),0,0]
@@ -144,10 +143,23 @@ class Perform(object):
         rospy.sleep(5)
 
     def run(self):
-        #select_action
-        self.select_action()
-        rospy.sleep(1)
-        self.find_object()
+        while True:
+            #select_action
+            self.select_action()
+            rospy.sleep(1)
+            self.find_object()
+            if self.ang_complete and self.lin_complete:
+                self.pick_up()
+            self.ang_complete = False
+            self.lin_complete = False
+            rospy.sleep(1)
+            self.turn_around()
+            self.search_for_tag = True
+            rospy.sleep(1)
+            self.put_down()
+            rospy.sleep(1)
+            self.turn_around()
+
 
 
         # # when looking for tag set goal_id and set search_for_tag to True
@@ -236,6 +248,8 @@ class Perform(object):
     
     # find tag and move to it
     def find_tag(self): #Kendrick
+        # set goal id
+        goal_id = self.current_action.tag_id
         # extract tag parameters
         corners, ids, rejected_points = cv2.aruco.detectMarkers(self.grayscale_img, self.aruco_dict)
         curr_center_x = 0
@@ -247,7 +261,7 @@ class Perform(object):
             # loop over detected tag corners
             for (markerCorner, markerID) in zip(corners, ids):
                 # skip if we are not looking for this tag
-                if not markerID == self.goal_id:
+                if not markerID == goal_id:
                     continue
                 # extract the marker corners (which are always returned in
                 # top-left, top-right, bottom-right, and bottom-left order)
