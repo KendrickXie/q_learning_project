@@ -59,7 +59,7 @@ class Perform(object):
         
         # read in our trained q_matrix
         # TODO: read in csv with proper types
-        # self.q_matrix = np.loadtxt(path_prefix + "converged_q_matrix.csv", dtype=int)
+        self.q_matrix = np.loadtxt(path_prefix + "converged_q_matrix.csv", dtype=float)
 
         # set up ROS / OpenCV bridge
         self.bridge = cv_bridge.CvBridge()
@@ -97,12 +97,14 @@ class Perform(object):
         
         
         # Alex
-        self.scan_subscriber = rospy.Subscriber('/scan', LaserScan, self.scan_callback)
+        # self.scan_subscriber = rospy.Subscriber('/scan', LaserScan, self.scan_callback)
         self.target_color = None
         self.target_tag = None
         self.ang_complete = True
         self.lin_complete = True
-        self.stop_threshold = 0.25
+        self.stop_threshold = 0.33
+        self.search_for_object = False
+        self.object_found = False
 
 
 
@@ -117,7 +119,7 @@ class Perform(object):
         self.aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_50)
         self.grayscale_img = None
         self.closest_range_in_front = 0
-        self.closest_distance_allowed = 0.25
+        self.closest_distance_allowed = 0.4
         self.ar_tag_found = False
 
         self.arm_up = [0,math.radians(-50),0,0]
@@ -144,23 +146,24 @@ class Perform(object):
     def run(self):
         while True:
             #select_action
-            if self.ang_complete and self.lin_complete:
-                self.select_action()
-                rospy.sleep(1)
+            self.select_action()
+            rospy.sleep(1)
+            self.search_for_object = True
             self.find_object()
-            if not self.ang_complete or not self.lin_complete:
-                continue
+            rospy.sleep(1)
             self.pick_up()
             # self.ang_complete = False
             # self.lin_complete = False
             rospy.sleep(1)
-            self.turn_around()
+            self.turnaround()
             rospy.sleep(1)
+            self.search_for_tag = True
             self.find_tag()
             rospy.sleep(1)
             self.put_down()
             rospy.sleep(1)
-            self.turn_around()
+            self.turnaround()
+            rospy.sleep(1)            
 
 
 
@@ -179,85 +182,74 @@ class Perform(object):
 
     # find object and move to it
     def find_object(self): #Alex
-        hsv = cv2.cvtColor(self.image, cv2.COLOR_BGR2HSV)
-        # 300, 40, 60
-        lower_pink = np.array([150, 100, 70])
-        # 340, 60, 80 
-        upper_pink = np.array([170, 155, 210])
-        # 60, 45, 45
-        lower_green = np.array([30, 85, 80])
-        # 85, 80, 95
-        upper_green = np.array([45, 150, 200])
-        # 180, 30, 50
-        lower_blue = np.array([90, 85, 100])
-        # 210, 75, 85
-        upper_blue = np.array([105, 140, 240])
+        while self.search_for_object:
+            hsv = cv2.cvtColor(self.image, cv2.COLOR_BGR2HSV)
+            # 300, 40, 60
+            lower_pink = np.array([150, 100, 70])
+            # 340, 60, 80 
+            upper_pink = np.array([170, 155, 210])
+            # 60, 45, 45
+            lower_green = np.array([30, 85, 80])
+            # 85, 80, 95
+            upper_green = np.array([45, 150, 200])
+            # 180, 30, 50
+            lower_blue = np.array([90, 85, 100])
+            # 210, 75, 85
+            upper_blue = np.array([105, 140, 240])
 
-        mask = None
-        if self.current_action.robot_object == "pink":
-            print("pink mask")
-            mask = cv2.inRange(hsv, lower_pink, upper_pink)
-        elif self.current_action.robot_object == "green":
-            print("green mask")
-            mask = cv2.inRange(hsv, lower_green, upper_green)
-        elif self.current_action.robot_object == "blue":
-            print("blue mask")
-            mask = cv2.inRange(hsv, lower_blue, upper_blue)
-        else:
-            print("Error with current_action robot_object")
-            return
+            mask = None
+            if self.current_action.robot_object == "pink":
+                print("pink mask")
+                mask = cv2.inRange(hsv, lower_pink, upper_pink)
+            elif self.current_action.robot_object == "green":
+                print("green mask")
+                mask = cv2.inRange(hsv, lower_green, upper_green)
+            elif self.current_action.robot_object == "blue":
+                print("blue mask")
+                mask = cv2.inRange(hsv, lower_blue, upper_blue)
+            else:
+                print("Error with current_action robot_object")
 
-        h, w, c = self.image.shape   # height, width, channel
+            h, w, c = self.image.shape   # height, width, channel
 
-        # https://www.pythonpool.com/opencv-moments/
-        # https://learnopencv.com/find-center-of-blob-centroid-using-opencv-cpp-python/
-        # using moments() function, the center of the yellow pixels is determined
-        M = cv2.moments(mask)
-        # if there are any yellow pixels found
-        if M['m00'] > 0:
-            # center of the yellow pixels in the image
-            cx = int(M['m10']/M['m00'])
-            cy = int(M['m01']/M['m00'])
+            # https://www.pythonpool.com/opencv-moments/
+            # https://learnopencv.com/find-center-of-blob-centroid-using-opencv-cpp-python/
+            # using moments() function, the center of the yellow pixels is determined
+            M = cv2.moments(mask)
+            # if there are any yellow pixels found
+            if M['m00'] > 0 and not self.closest_range_in_front == 0:
+                # center of the yellow pixels in the image
+                cx = int(M['m10']/M['m00'])
+                cy = int(M['m01']/M['m00'])
 
-            cv2.circle(self.image, (cx, cy), 20, (0,0,255), -1)
+                # cv2.circle(self.image, (cx, cy), 20, (0,0,255), -1)
 
-            kp_ang = 0.01
-            ang_err = (cx - w/2)
-            # adjusting robo ang
-            if not self.ang_complete:
-                # adjust tolerance 
-                if abs(ang_err) > 10:
-                    velo = Twist(
-                        linear = Vector3(0,0,0),
-                        angular = Vector3(0,0,kp_ang*ang_err)
-                    )
-                    self.velo_publisher.publish(velo)
-                    return
+                # turn robot towards tag and move forward
+                kp_ang = 0.003
+                ang_err = w/2 - cx
+                
+                self.twist.angular.z = kp_ang * ang_err
+                if self.stop_threshold < self.closest_range_in_front:
+                    print("moving forward")
+                    self.twist.linear.x = 0.1
                 else:
-                    self.stop()
-                    self.ang_complete = True
-                    print("Ang Adjustment Completed!")
-            # adjusting robo dist
-            if not self.lin_complete:
-                curr_dist = self.get_smoothed_dist(2)
-                kp_lin = 0.1
-                if curr_dist > self.stop_threshold:
-                    lin_err = curr_dist - self.stop_threshold
-                    velo = Twist(
-                        linear = Vector3(kp_lin*lin_err,0,0),
-                        angular = Vector3(0,0,0)
-                    )
-                    self.velo_publisher.publish(velo)
-                    return
-                else:
-                    self.stop()
-                    self.lin_complete = True
-                    print("Lin Adjustment Completed!")
+                    print("reached object")
+                    self.twist.linear.x = 0.0
+                    self.twist.angular.z = 0.0
+                    self.search_for_object = False
+                        
+            else:
+                # turn until a tag is found
+                self.twist.angular.z = 0.5
+                self.twist.linear.x = 0.0
+
+            # Publish the Twist message
+            self.velo_publisher.publish(self.twist)
 
         # shows the debugging window
         # hint: you might want to disable this once you're able to get a red circle in the debugging window
-        cv2.imshow("window", self.image)
-        cv2.waitKey(3)
+        # cv2.imshow("window", self.image)
+        # cv2.waitKey(3)
 
     def stop(self):
         velo = Twist(
@@ -266,41 +258,43 @@ class Perform(object):
         )
         self.velo_publisher.publish(velo)
 
+
     
     # find tag and move to it
     def find_tag(self): #Kendrick
-        # find the x coordinate of the center of the image
-        h, w = self.grayscale_img.shape
-        img_center_x = w / 2
-        print("searching for tag")
-        
-        # set goal id
-        goal_id = self.current_action.tag_id
-        # extract tag parameters
-        corners, ids, rejected_points = cv2.aruco.detectMarkers(self.grayscale_img, self.aruco_dict)
-        curr_center_x = 0
-        # check that a tag if found
-        if len(corners) > 0:
-            print("found tag")
-            # flatten the ArUco IDs list
-            ids = ids.flatten()
-            # loop over detected tag corners
-            for (markerCorner, markerID) in zip(corners, ids):
-                # skip if we are not looking for this tag
-                if not markerID == goal_id:
-                    continue
-                # extract the marker corners (which are always returned in
-                # top-left, top-right, bottom-right, and bottom-left order)
-                corners = markerCorner.reshape((4, 2))
-                (topLeft, topRight, bottomRight, bottomLeft) = corners
-                # convert each of the (x, y)-coordinate pairs to integers
-                # topRight = (int(topRight[0]), int(topRight[1]))
-                # bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
-                # bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
-                # topLeft = (int(topLeft[0]), int(topLeft[1]))
-                # find the x coordinate of the center of the tag
-                width = int(bottomRight[0]) - int(bottomLeft[0])
-                curr_center_x = int(bottomLeft[0]) + (width / 2)
+        while self.search_for_tag:
+            # find the x coordinate of the center of the image
+            h, w = self.grayscale_img.shape
+            img_center_x = w / 2
+            print("searching for tag")
+            
+            # set goal id
+            goal_id = self.current_action.tag_id
+            # extract tag parameters
+            corners, ids, rejected_points = cv2.aruco.detectMarkers(self.grayscale_img, self.aruco_dict)
+            curr_center_x = 0
+            # check that a tag if found
+            if len(corners) > 0:
+                print("found tag")
+                # flatten the ArUco IDs list
+                ids = ids.flatten()
+                # loop over detected tag corners
+                for (markerCorner, markerID) in zip(corners, ids):
+                    # skip if we are not looking for this tag
+                    if not markerID == goal_id:
+                        continue
+                    # extract the marker corners (which are always returned in
+                    # top-left, top-right, bottom-right, and bottom-left order)
+                    corners = markerCorner.reshape((4, 2))
+                    (topLeft, topRight, bottomRight, bottomLeft) = corners
+                    # convert each of the (x, y)-coordinate pairs to integers
+                    # topRight = (int(topRight[0]), int(topRight[1]))
+                    # bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
+                    # bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
+                    # topLeft = (int(topLeft[0]), int(topLeft[1]))
+                    # find the x coordinate of the center of the tag
+                    width = int(bottomRight[0]) - int(bottomLeft[0])
+                    curr_center_x = int(bottomLeft[0]) + (width / 2)
 
         if curr_center_x == 0 and not self.ar_tag_found:
             # turn until a tag is found
@@ -311,34 +305,71 @@ class Perform(object):
             self.twist.linear.x = 0.0
             self.twist.angular.z = 0.0
             
-            # if still far from the closest object in the front, keep moving forward
-            if self.closest_distance_allowed < self.closest_range_in_front:
-                print("moving forward")
-                self.twist.linear.x = 0.1
-            else:
-                # self.put_down
-                self.search_for_tag = False
-                self.ar_tag_found = False
-        else:
-            # turn robot towards tag and move forward
-            k = 0.01
-            e = img_center_x - curr_center_x
-            self.twist.angular.z = k * e
-            self.ar_tag_found = True
-            if self.closest_distance_allowed < self.closest_range_in_front:
-                print("moving forward")
-                self.twist.linear.x = 0.1
-            # else:
-            #     print("too close")
-            #     print("closest range:", self.closest_range_in_front)
-            #     self.twist.linear.x = 0.0
-            #     self.twist.angular.z = 0.0
-            #     # self.put_down
-            #     self.search_for_tag = False
-                
+            # set goal id
+            goal_id = self.current_action.tag_id
+            # extract tag parameters
+            corners, ids, rejected_points = cv2.aruco.detectMarkers(self.grayscale_img, self.aruco_dict)
+            curr_center_x = 0
+            # check that a tag if found
+            if len(corners) > 0:
+                print("found tag")
+                # flatten the ArUco IDs list
+                ids = ids.flatten()
+                # loop over detected tag corners
+                for (markerCorner, markerID) in zip(corners, ids):
+                    # skip if we are not looking for this tag
+                    if not markerID == goal_id:
+                        continue
+                    # extract the marker corners (which are always returned in
+                    # top-left, top-right, bottom-right, and bottom-left order)
+                    corners = markerCorner.reshape((4, 2))
+                    (topLeft, topRight, bottomRight, bottomLeft) = corners
+                    # convert each of the (x, y)-coordinate pairs to integers
+                    # topRight = (int(topRight[0]), int(topRight[1]))
+                    # bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
+                    # bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
+                    # topLeft = (int(topLeft[0]), int(topLeft[1]))
+                    # find the x coordinate of the center of the tag
+                    width = int(bottomRight[0]) - int(bottomLeft[0])
+                    curr_center_x = int(bottomLeft[0]) + (width / 2)
 
-        # Publish the Twist message
-        self.velo_publisher.publish(self.twist)
+            if curr_center_x == 0 and not self.ar_tag_found:
+                # turn until a tag is found
+                self.twist.angular.z = 0.5
+                self.twist.linear.x = 0.0
+            elif curr_center_x == 0 and self.ar_tag_found:
+                # stop once an tag was found and the tag is to close for the camera to detect
+                self.twist.linear.x = 0.0
+                self.twist.angular.z = 0.0
+                
+                # if still far from the closest object in the front, keep moving forward
+                if self.closest_distance_allowed < self.closest_range_in_front:
+                    print("moving forward")
+                    self.twist.linear.x = 0.1
+                else:
+                    # self.put_down
+                    self.search_for_tag = False
+                    self.ar_tag_found = False
+            else:
+                # turn robot towards tag and move forward
+                k = 0.01
+                e = img_center_x - curr_center_x
+                self.twist.angular.z = k * e
+                self.ar_tag_found = True
+                if self.closest_distance_allowed < self.closest_range_in_front:
+                    print("moving forward")
+                    self.twist.linear.x = 0.1
+                # else:
+                #     print("too close")
+                #     print("closest range:", self.closest_range_in_front)
+                #     self.twist.linear.x = 0.0
+                #     self.twist.angular.z = 0.0
+                #     # self.put_down
+                #     self.search_for_tag = False
+                    
+
+            # Publish the Twist message
+            self.velo_publisher.publish(self.twist)
 
 
 
@@ -383,14 +414,21 @@ class Perform(object):
     
     # perform an action by publishing to "/q_learning/robot_action"
     def perform_action(self, selected_action):
-        print("Performing action...")
-        color, tag = self.get_action_details(selected_action)
+        print("performing action...", selected_action)
+        color, tag = selected_action["object"], selected_action["tag"]
         message = RobotMoveObjectToTag(
             robot_object = color, 
-            tag_id = tag
+            tag_id = int(tag)
         )
         self.action_publisher.publish(message)
         return
+
+    # # get the color and tag associated with an action
+    # def get_action_details(self, selected_action):
+    #     action_deets = self.actions[selected_action["action_idx"]]
+    #     color = action_deets["object"]
+    #     tag = action_deets["tag"]
+    #     return color, tag
 
 
     # callback function for when we publish an action
@@ -400,12 +438,11 @@ class Perform(object):
 
     def image_callback(self, msg):
         self.image = self.bridge.imgmsg_to_cv2(msg,desired_encoding='bgr8')
-
         # converts the incoming ROS message to OpenCV format and grayscale
         self.grayscale_img = self.bridge.imgmsg_to_cv2(msg,desired_encoding='mono8')
 
     def lidar_callback(self, msg):
-        self.scan_ranges = msg
+        self.scan_ranges = msg.ranges
         # find range of the closest object within the front 90 degrees of the robot
         closest_range = 100
         angle = 0
@@ -419,12 +456,18 @@ class Perform(object):
     def get_smoothed_dist(self, smoothing_factor):
         smoothed_dist = 0
         for i in range(-smoothing_factor, smoothing_factor + 1):
-            smoothed_dist.append(self.scan_ranges[i])
+            smoothed_dist += (self.scan_ranges[i])
         smoothed_dist /= (2*smoothing_factor + 1)
         return smoothed_dist
+        # min_dist = 100
+        # for i in range(-smoothing_factor, smoothing_factor + 1):
+        #     if self.scan_ranges[i] < min_dist:
+        #         min_dist = self.scan_ranges[i]
+        # print("min_dist:", min_dist)
+        # return min_dist
 
     def turnaround(self):
-        print("Turning around...")
+        print("turning around...")
         velo = Twist(
             linear = Vector3(0,0,0),
             angular = Vector3(0,0,0.785398) #45 deg in rad
@@ -438,3 +481,18 @@ if __name__ == '__main__':
     node = Perform()
     print("running")
     node.run()
+
+
+
+
+'''
+roscore
+rosrun image_transport republish compressed in:=raspicam_node/image raw out:=camera/rgb/image_raw
+ssh turtlebot
+inside ssh: bringup, 
+ssh another window
+inside ssh: bringup_cam
+roslaunch turtlebot3_manipulation_bringup turtlebot3_manipulation_bringup.launch
+roslaunch turtlebot3_manipulation_moveit_config move_group.launch
+
+'''
