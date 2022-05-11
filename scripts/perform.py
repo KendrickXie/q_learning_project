@@ -100,8 +100,8 @@ class Perform(object):
         self.scan_subscriber = rospy.Subscriber('/scan', LaserScan, self.scan_callback)
         self.target_color = None
         self.target_tag = None
-        self.ang_complete = False
-        self.lin_complete = False
+        self.ang_complete = True
+        self.lin_complete = True
         self.stop_threshold = 0.25
 
 
@@ -145,13 +145,15 @@ class Perform(object):
     def run(self):
         while True:
             #select_action
-            self.select_action()
-            rospy.sleep(1)
-            self.find_object()
             if self.ang_complete and self.lin_complete:
-                self.pick_up()
-            self.ang_complete = False
-            self.lin_complete = False
+                self.select_action()
+                rospy.sleep(1)
+            self.find_object()
+            if not self.ang_complete or not self.lin_complete:
+                continue
+            self.pick_up()
+            # self.ang_complete = False
+            # self.lin_complete = False
             rospy.sleep(1)
             self.turn_around()
             self.search_for_tag = True
@@ -193,10 +195,13 @@ class Perform(object):
 
         mask = None
         if self.current_action.robot_object == "pink":
+            print("pink mask")
             mask = cv2.inRange(hsv, lower_pink, upper_pink)
         elif self.current_action.robot_object == "green":
+            print("green mask")
             mask = cv2.inRange(hsv, lower_green, upper_green)
         elif self.current_action.robot_object == "blue":
+            print("blue mask")
             mask = cv2.inRange(hsv, lower_blue, upper_blue)
         else:
             print("Error with current_action robot_object")
@@ -216,34 +221,49 @@ class Perform(object):
 
             cv2.circle(self.image, (cx, cy), 20, (0,0,255), -1)
 
-            kp_ang = 0.05
+            kp_ang = 0.01
             ang_err = (cx - w/2)
             # adjusting robo ang
-            while abs(ang_err) > 10:
-                velo = Twist(
-                    linear = Vector3(0,0,0),
-                    angular = Vector3(0,0,kp_ang*ang_err)
-                )
-                self.velo_publisher.publish(velo)
-            self.ang_complete = True
+            if not self.ang_complete:
+                if abs(ang_err) > 10:
+                    velo = Twist(
+                        linear = Vector3(0,0,0),
+                        angular = Vector3(0,0,kp_ang*ang_err)
+                    )
+                    self.velo_publisher.publish(velo)
+                    return
+                else:
+                    self.stop()
+                    self.ang_complete = True
+                    print("Ang Adjustment Completed!")
             # adjusting robo dist
-            curr_dist = self.get_smoothed_dist(2)
-            kp_lin = 0.25
-            while curr_dist > self.stop_threshold:
+            if not self.lin_complete:
                 curr_dist = self.get_smoothed_dist(2)
-                lin_err = self.stop_threshold - curr_dist
-                velo = Twist(
-                    linear = Vector3(kp_lin*lin_err,0,0),
-                    angular = Vector3(0,0,0)
-                )
-                self.velo_publisher.publish(velo)
-            self.lin_complete = True
+                kp_lin = 0.1
+                if curr_dist > self.stop_threshold:
+                    lin_err = curr_dist - self.stop_threshold
+                    velo = Twist(
+                        linear = Vector3(kp_lin*lin_err,0,0),
+                        angular = Vector3(0,0,0)
+                    )
+                    self.velo_publisher.publish(velo)
+                    return
+                else:
+                    self.stop()
+                    self.lin_complete = True
+                    print("Lin Adjustment Completed!")
 
         # shows the debugging window
         # hint: you might want to disable this once you're able to get a red circle in the debugging window
         cv2.imshow("window", self.image)
         cv2.waitKey(3)
 
+    def stop(self):
+        velo = Twist(
+            linear = Vector3(0,0,0),
+            angular = Vector3(0,0,0)
+        )
+        self.velo_publisher.publish(velo)
 
     
     # find tag and move to it
@@ -342,6 +362,9 @@ class Perform(object):
 
     def select_action(self): #Alex
         # publish action
+        print("Selecting action...")
+        self.ang_complete = False
+        self.lin_complete = False
         max_q_val_for_state = max(self.q_matrix[self.current_state])
         actions = [i for i, q_val in enumerate(self.q_matrix[self.current_state]) if q_val == max_q_val_for_state]
         selected_action_idx = random.choice(actions)
@@ -354,6 +377,7 @@ class Perform(object):
     
     # perform an action by publishing to "/q_learning/robot_action"
     def perform_action(self, selected_action):
+        print("Performing action...")
         color, tag = self.get_action_details(selected_action)
         message = RobotMoveObjectToTag(
             robot_object = color, 
@@ -401,6 +425,7 @@ class Perform(object):
         return smoothed_dist
 
     def turnaround(self):
+        print("Turning around...")
         velo = Twist(
             linear = Vector3(0,0,0),
             angular = Vector3(0,0,0.785398) #45 deg in rad
