@@ -225,6 +225,7 @@ class Perform(object):
             ang_err = (cx - w/2)
             # adjusting robo ang
             if not self.ang_complete:
+                # adjust tolerance 
                 if abs(ang_err) > 10:
                     velo = Twist(
                         linear = Vector3(0,0,0),
