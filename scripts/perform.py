@@ -103,6 +103,7 @@ class Perform(object):
         self.ang_complete = True
         self.lin_complete = True
         self.stop_threshold = 0.33
+        self.image = None
 
 
 
@@ -195,15 +196,16 @@ class Perform(object):
         # 210, 75, 85
         upper_blue = np.array([105, 140, 240])
 
+
         mask = None
         if self.current_action.robot_object == "pink":
-            print("pink mask")
+            # print("pink mask")
             mask = cv2.inRange(hsv, lower_pink, upper_pink)
         elif self.current_action.robot_object == "green":
-            print("green mask")
+            # print("green mask")
             mask = cv2.inRange(hsv, lower_green, upper_green)
         elif self.current_action.robot_object == "blue":
-            print("blue mask")
+            # print("blue mask")
             mask = cv2.inRange(hsv, lower_blue, upper_blue)
         else:
             print("Error with current_action robot_object")
@@ -277,56 +279,11 @@ class Perform(object):
     
     # find tag and move to it
     def find_tag(self): #Kendrick
-<<<<<<< HEAD
         # find the x coordinate of the center of the image
         while self.search_for_tag:
             h, w = self.grayscale_img.shape
             img_center_x = w / 2
             print("searching for tag")
-=======
-        while self.search_for_tag:
-            # find the x coordinate of the center of the image
-            h, w = self.grayscale_img.shape
-            img_center_x = w / 2
-            print("searching for tag")
-            
-            # set goal id
-            goal_id = self.current_action.tag_id
-            # extract tag parameters
-            corners, ids, rejected_points = cv2.aruco.detectMarkers(self.grayscale_img, self.aruco_dict)
-            curr_center_x = 0
-            # check that a tag if found
-            if len(corners) > 0:
-                print("found tag")
-                # flatten the ArUco IDs list
-                ids = ids.flatten()
-                # loop over detected tag corners
-                for (markerCorner, markerID) in zip(corners, ids):
-                    # skip if we are not looking for this tag
-                    if not markerID == goal_id:
-                        continue
-                    # extract the marker corners (which are always returned in
-                    # top-left, top-right, bottom-right, and bottom-left order)
-                    corners = markerCorner.reshape((4, 2))
-                    (topLeft, topRight, bottomRight, bottomLeft) = corners
-                    # convert each of the (x, y)-coordinate pairs to integers
-                    # topRight = (int(topRight[0]), int(topRight[1]))
-                    # bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
-                    # bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
-                    # topLeft = (int(topLeft[0]), int(topLeft[1]))
-                    # find the x coordinate of the center of the tag
-                    width = int(bottomRight[0]) - int(bottomLeft[0])
-                    curr_center_x = int(bottomLeft[0]) + (width / 2)
-
-        if curr_center_x == 0 and not self.ar_tag_found:
-            # turn until a tag is found
-            self.twist.angular.z = 0.5
-            self.twist.linear.x = 0.0
-        elif curr_center_x == 0 and self.ar_tag_found:
-            # stop once an tag was found and the tag is to close for the camera to detect
-            self.twist.linear.x = 0.0
-            self.twist.angular.z = 0.0
->>>>>>> f35c0ae6021824005a5806bfeaf8d80cdbfb6e7c
             
             # set goal id
             goal_id = self.current_action.tag_id
@@ -430,6 +387,7 @@ class Perform(object):
         selected_action_idx = random.choice(actions)
         selected_action = self.actions[selected_action_idx]
         self.perform_action(selected_action)
+        # print("selected action:", selected_action)
         for i, action_taken in enumerate(self.action_matrix[self.current_state]):
             if action_taken == selected_action_idx:
                 self.current_state = i
