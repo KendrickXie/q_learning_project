@@ -100,12 +100,11 @@ class Perform(object):
         # self.scan_subscriber = rospy.Subscriber('/scan', LaserScan, self.scan_callback)
         self.target_color = None
         self.target_tag = None
-        self.ang_complete = True
-        self.lin_complete = True
-        self.stop_threshold = 0.33
+        self.stop_threshold = 0.23
         self.image = None
-
-
+        self.search_for_object = False
+        self.object_found = False
+        self.image = None
 
 
 
@@ -145,12 +144,11 @@ class Perform(object):
     def run(self):
         while True:
             #select_action
-            if self.ang_complete and self.lin_complete:
-                self.select_action()
-                rospy.sleep(1)
+            self.select_action()
+            rospy.sleep(1)
+            self.search_for_object = True
             self.find_object()
-            if not self.ang_complete or not self.lin_complete:
-                continue
+            rospy.sleep(1)
             self.pick_up()
             # self.ang_complete = False
             # self.lin_complete = False
@@ -163,7 +161,7 @@ class Perform(object):
             self.put_down()
             rospy.sleep(1)
             self.turnaround()
-            rospy.sleep(1)            
+            rospy.sleep(1)               
 
 
 
@@ -182,91 +180,69 @@ class Perform(object):
 
     # find object and move to it
     def find_object(self): #Alex
-        hsv = cv2.cvtColor(self.image, cv2.COLOR_BGR2HSV)
-        # 300, 40, 60
-        lower_pink = np.array([150, 100, 70])
-        # 340, 60, 80 
-        upper_pink = np.array([170, 155, 210])
-        # 60, 45, 45
-        lower_green = np.array([30, 85, 80])
-        # 85, 80, 95
-        upper_green = np.array([45, 150, 200])
-        # 180, 30, 50
-        lower_blue = np.array([90, 85, 100])
-        # 210, 75, 85
-        upper_blue = np.array([105, 140, 240])
+        while self.search_for_object:
+            hsv = cv2.cvtColor(self.image, cv2.COLOR_BGR2HSV)
+            # 300, 40, 60
+            lower_pink = np.array([150, 100, 70])
+            # 340, 60, 80 
+            upper_pink = np.array([170, 155, 210])
+            # 60, 45, 45
+            lower_green = np.array([30, 85, 80])
+            # 85, 80, 95
+            upper_green = np.array([45, 150, 200])
+            # 180, 30, 50
+            lower_blue = np.array([90, 85, 100])
+            # 210, 75, 85
+            upper_blue = np.array([105, 140, 240])
 
+            mask = None
+            if self.current_action.robot_object == "pink":
+                print("pink mask")
+                mask = cv2.inRange(hsv, lower_pink, upper_pink)
+            elif self.current_action.robot_object == "green":
+                print("green mask")
+                mask = cv2.inRange(hsv, lower_green, upper_green)
+            elif self.current_action.robot_object == "blue":
+                print("blue mask")
+                mask = cv2.inRange(hsv, lower_blue, upper_blue)
+            else:
+                print("Error with current_action robot_object")
 
-        mask = None
-        if self.current_action.robot_object == "pink":
-            # print("pink mask")
-            mask = cv2.inRange(hsv, lower_pink, upper_pink)
-        elif self.current_action.robot_object == "green":
-            # print("green mask")
-            mask = cv2.inRange(hsv, lower_green, upper_green)
-        elif self.current_action.robot_object == "blue":
-            # print("blue mask")
-            mask = cv2.inRange(hsv, lower_blue, upper_blue)
-        else:
-            print("Error with current_action robot_object")
+            h, w, c = self.image.shape   # height, width, channel
 
-        h, w, c = self.image.shape   # height, width, channel
+            # https://www.pythonpool.com/opencv-moments/
+            # https://learnopencv.com/find-center-of-blob-centroid-using-opencv-cpp-python/
+            # using moments() function, the center of the yellow pixels is determined
+            M = cv2.moments(mask)
+            # if there are any yellow pixels found
+            if M['m00'] > 0 and not self.closest_range_in_front == 0:
+                # center of the yellow pixels in the image
+                cx = int(M['m10']/M['m00'])
+                cy = int(M['m01']/M['m00'])
 
-        # https://www.pythonpool.com/opencv-moments/
-        # https://learnopencv.com/find-center-of-blob-centroid-using-opencv-cpp-python/
-        # using moments() function, the center of the yellow pixels is determined
-        M = cv2.moments(mask)
-        # if there are any yellow pixels found
-        if M['m00'] > 0:
-            # center of the yellow pixels in the image
-            cx = int(M['m10']/M['m00'])
-            cy = int(M['m01']/M['m00'])
+                # cv2.circle(self.image, (cx, cy), 20, (0,0,255), -1)
 
-            # cv2.circle(self.image, (cx, cy), 20, (0,0,255), -1)
-
-            kp_ang = 0.003
-            ang_err = abs(cx - 20 - w/2)
-            # adjusting robo ang
-            if not self.ang_complete:
-                # adjust tolerance 
-                print("ang_err:",ang_err)
-                if abs(ang_err) > 7:
-                    max_ang = min(kp_ang*ang_err, 0.3)
-                    velo = Twist(
-                        linear = Vector3(0,0,0),
-                        angular = Vector3(0,0,max_ang)
-                    )
-                    self.velo_publisher.publish(velo)
-                    return
+                # turn robot towards tag and move forward
+                kp_ang = 0.003
+                ang_err = w/2 - cx
                 
+                self.twist.angular.z = kp_ang * ang_err
+                if self.stop_threshold < self.closest_range_in_front:
+                    print("moving forward")
+                    self.twist.linear.x = 0.1
                 else:
-                    self.stop()
-                    self.ang_complete = True
-                    print("Ang Adjustment Completed!")
-            # adjusting robo dist
-            if not self.lin_complete:
-                curr_dist = self.get_smoothed_dist(7)
-                kp_lin = 0.1
-                if curr_dist > self.stop_threshold:
-                    lin_err = curr_dist - self.stop_threshold
-                    velo = Twist(
-                        linear = Vector3(kp_lin*lin_err,0,0),
-                        angular = Vector3(0,0,0)
-                    )
-                    self.velo_publisher.publish(velo)
-                    return
-                elif curr_dist < self.stop_threshold:
-                    self.stop()
-                    rospy.sleep(0.1)
-                    self.lin_complete = True
-                    print("Lin Adjustment Completed!")
-                else:
-                    print("curr_dist is inf aka 0")
+                    print("reached object")
+                    self.twist.linear.x = 0.0
+                    self.twist.angular.z = 0.0
+                    self.search_for_object = False
+                        
+            else:
+                # turn until a tag is found
+                self.twist.angular.z = 0.5
+                self.twist.linear.x = 0.0
 
-        # shows the debugging window
-        # hint: you might want to disable this once you're able to get a red circle in the debugging window
-        # cv2.imshow("window", self.image)
-        # cv2.waitKey(3)
+            # Publish the Twist message
+            self.velo_publisher.publish(self.twist)
 
     def stop(self):
         velo = Twist(
@@ -332,7 +308,7 @@ class Perform(object):
                     self.ar_tag_found = False
             else:
                 # turn robot towards tag and move forward
-                k = 0.01
+                k = 0.005
                 e = img_center_x - curr_center_x
                 self.twist.angular.z = k * e
                 self.ar_tag_found = True
@@ -449,11 +425,18 @@ class Perform(object):
 
     def turnaround(self):
         print("turning around...")
-        velo = Twist(
+        velo_b = Twist(
+            linear = Vector3(-0.3,0,0),
+            angular = Vector3(0,0,0)
+        )
+        self.velo_publisher.publish(velo_b)
+        rospy.sleep(1.5)
+        self.stop()
+        velo_t = Twist(
             linear = Vector3(0,0,0),
             angular = Vector3(0,0,0.785398) #45 deg in rad
         )
-        self.velo_publisher.publish(velo)
+        self.velo_publisher.publish(velo_t)
         rospy.sleep(4)
 
 
@@ -475,5 +458,4 @@ ssh another window
 inside ssh: bringup_cam
 roslaunch turtlebot3_manipulation_bringup turtlebot3_manipulation_bringup.launch
 roslaunch turtlebot3_manipulation_moveit_config move_group.launch
-
 '''
