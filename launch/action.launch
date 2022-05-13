@@ -1,3 +1,4 @@
 <launch> 
     <node name="perform" pkg="q_learning_project" type="perform.py" output="screen"/>
+    <node name="compressed" pkg="image_transport" type="republish" args="in:raspicam_node/image raw out:=camera/rgb/image_raw"/>
 </launch>
