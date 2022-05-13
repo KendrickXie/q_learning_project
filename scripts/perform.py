@@ -129,9 +129,9 @@ class Perform(object):
         self.move_group_gripper.go(self.open_grip, wait=True)
 
 
-
         rospy.sleep(5)
 
+        
     def run(self):
         while True:
             #select_action
@@ -153,22 +153,8 @@ class Perform(object):
             rospy.sleep(1)               
 
 
-
-        # # when looking for tag set goal_id and set search_for_tag to True
-        # self.goal_id = 2
-        # self.search_for_tag = False
-        # self.pick_up()
-        # print("pick_up executed")
-        # rospy.sleep(3)
-        # self.put_down()
-        # print("put_down executed")
-
-
-        # # Keep the program alive.
-        # rospy.spin()
-
     # find object and move to it
-    def find_object(self): #Alex
+    def find_object(self):
         while self.search_for_object:
             hsv = cv2.cvtColor(self.image, cv2.COLOR_BGR2HSV)
             # 300, 40, 60
@@ -209,8 +195,6 @@ class Perform(object):
                 cx = int(M['m10']/M['m00'])
                 cy = int(M['m01']/M['m00'])
 
-                # cv2.circle(self.image, (cx, cy), 20, (0,0,255), -1)
-
                 # turn robot towards tag and move forward
                 kp_ang = 0.003
                 ang_err = w/2 - cx
@@ -233,6 +217,8 @@ class Perform(object):
             # Publish the Twist message
             self.velo_publisher.publish(self.twist)
 
+     
+    # stop all of the robot's movements
     def stop(self):
         velo = Twist(
             linear = Vector3(0,0,0),
@@ -306,13 +292,6 @@ class Perform(object):
                 if self.tag_stop_threshold < self.closest_range_in_front:
                     print("moving forward")
                     self.twist.linear.x = 0.1
-                # else:
-                #     print("too close")
-                #     print("closest range:", self.closest_range_in_front)
-                #     self.twist.linear.x = 0.0
-                #     self.twist.angular.z = 0.0
-                #     # self.put_down
-                #     self.search_for_tag = False
                     
 
             # Publish the Twist message
@@ -344,6 +323,8 @@ class Perform(object):
         self.move_group_arm.go(self.arm_up, wait=True)
         rospy.sleep(3)
 
+    
+    # select an action
     def select_action(self): #Alex
         # publish action
         print("Selecting action...")
@@ -371,26 +352,22 @@ class Perform(object):
         self.action_publisher.publish(message)
         return
 
-    # # get the color and tag associated with an action
-    # def get_action_details(self, selected_action):
-    #     action_deets = self.actions[selected_action["action_idx"]]
-    #     color = action_deets["object"]
-    #     tag = action_deets["tag"]
-    #     return color, tag
-
 
     # callback function for when we publish an action
     def action_callback(self, msg):
         self.current_action = msg
         print("received instructions:", self.current_action)
 
+      
+    # callback to save the camera's image
     def image_callback(self, msg):
         self.image = self.bridge.imgmsg_to_cv2(msg,desired_encoding='bgr8')
         # converts the incoming ROS message to OpenCV format and grayscale
         self.grayscale_img = self.bridge.imgmsg_to_cv2(msg,desired_encoding='mono8')
 
+       
+    # callback to save the closest distance of an object in front of the robot
     def lidar_callback(self, msg):
-        self.scan_ranges = msg.ranges
         # find range of the closest object within the front 90 degrees of the robot
         closest_range = 100
         angle = 0
@@ -401,19 +378,8 @@ class Perform(object):
             angle = angle + 1
         self.closest_range_in_front = closest_range
 
-    def get_smoothed_dist(self, smoothing_factor):
-        smoothed_dist = 0
-        for i in range(-smoothing_factor, smoothing_factor + 1):
-            smoothed_dist += (self.scan_ranges[i])
-        smoothed_dist /= (2*smoothing_factor + 1)
-        return smoothed_dist
-        # min_dist = 100
-        # for i in range(-smoothing_factor, smoothing_factor + 1):
-        #     if self.scan_ranges[i] < min_dist:
-        #         min_dist = self.scan_ranges[i]
-        # print("min_dist:", min_dist)
-        # return min_dist
 
+    # move the robot backwards slightly
     def move_back(self):
         print("turning around...")
         velo_b = Twist(
@@ -431,16 +397,3 @@ if __name__ == '__main__':
     print("running")
     node.run()
 
-
-
-
-'''
-roscore
-rosrun image_transport republish compressed in:=raspicam_node/image raw out:=camera/rgb/image_raw
-ssh turtlebot
-inside ssh: bringup, 
-ssh another window
-inside ssh: bringup_cam
-roslaunch turtlebot3_manipulation_bringup turtlebot3_manipulation_bringup.launch
-roslaunch turtlebot3_manipulation_moveit_config move_group.launch
-'''
