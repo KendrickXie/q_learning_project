@@ -59,7 +59,7 @@ class Perform(object):
         
         # read in our trained q_matrix
         # TODO: read in csv with proper types
-        self.q_matrix = np.loadtxt(path_prefix + "converged_q_matrix.csv", dtype=float)
+        self.q_matrix = np.loadtxt(path_prefix + "converged_q_matrix.csv", dtype=float, delimiter=",")
 
         # set up ROS / OpenCV bridge
         self.bridge = cv_bridge.CvBridge()
