@@ -75,11 +75,11 @@ class Perform(object):
 
         # publishers and subscribers
         self.action_publisher = rospy.Publisher("/q_learning/robot_action", RobotMoveObjectToTag, queue_size=10)
-        self.action_subscriber = rospy.Subscriber("/q_learning/robot_action", RobotMoveObjectToTag, self.action_callback)
-        # subscribe to the robot's RGB camera data stream
-        self.image_subscriber = rospy.Subscriber('camera/rgb/image_raw', Image, self.image_callback)
         self.velo_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
-
+        self.action_subscriber = rospy.Subscriber("/q_learning/robot_action", RobotMoveObjectToTag, self.action_callback)
+        self.lidar_subscriber = rospy.Subscriber("/scan", LaserScan, self.lidar_callback)
+        self.image_subscriber = rospy.Subscriber('camera/rgb/image_raw', Image, self.image_callback)
+        
 
         # create a default twist msg with values of all zeros
         lin = Vector3()
@@ -96,28 +96,19 @@ class Perform(object):
 
         
         
-        # Alex
-        # self.scan_subscriber = rospy.Subscriber('/scan', LaserScan, self.scan_callback)
+        # Variables
         self.target_color = None
         self.target_tag = None
-        self.stop_threshold = 0.23
+        self.object_stop_threshold = 0.215
         self.image = None
         self.search_for_object = False
         self.object_found = False
         self.image = None
-
-
-
-
-
-        # Kendrick
-        self.lidar_subscriber = rospy.Subscriber("/scan", LaserScan, self.lidar_callback)
-
         self.search_for_tag = False
         self.aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_50)
         self.grayscale_img = None
         self.closest_range_in_front = 0
-        self.closest_distance_allowed = 0.4
+        self.tag_stop_threshold = 0.4
         self.ar_tag_found = False
 
         self.arm_up = [0,math.radians(-50),0,0]
@@ -129,7 +120,7 @@ class Perform(object):
         ]
 
         self.open_grip = [0.015,0.015]
-        self.close_grip = [0.0001,0.0001]
+        self.close_grip = [0.00005,0.00005]
 
         # set arm to upward position
         self.move_group_arm.go(self.arm_up, wait=True)
@@ -150,17 +141,15 @@ class Perform(object):
             self.find_object()
             rospy.sleep(1)
             self.pick_up()
-            # self.ang_complete = False
-            # self.lin_complete = False
             rospy.sleep(1)
-            self.turnaround()
+            self.move_back()
             rospy.sleep(1)
             self.search_for_tag = True
             self.find_tag()
             rospy.sleep(1)
             self.put_down()
             rospy.sleep(1)
-            self.turnaround()
+            self.move_back()
             rospy.sleep(1)               
 
 
@@ -227,7 +216,7 @@ class Perform(object):
                 ang_err = w/2 - cx
                 
                 self.twist.angular.z = kp_ang * ang_err
-                if self.stop_threshold < self.closest_range_in_front:
+                if self.object_stop_threshold < self.closest_range_in_front:
                     print("moving forward")
                     self.twist.linear.x = 0.1
                 else:
@@ -237,8 +226,8 @@ class Perform(object):
                     self.search_for_object = False
                         
             else:
-                # turn until a tag is found
-                self.twist.angular.z = 0.5
+                # turn until a object is found
+                self.twist.angular.z = 0.8
                 self.twist.linear.x = 0.0
 
             # Publish the Twist message
@@ -293,7 +282,7 @@ class Perform(object):
 
             if curr_center_x == 0 and not self.ar_tag_found:
                 # turn until a tag is found
-                self.twist.angular.z = 0.5
+                self.twist.angular.z = 0.8
                 self.twist.linear.x = 0.0
             elif curr_center_x == 0 and self.ar_tag_found:
                 # stop once an tag was found and the tag is to close for the camera to detect
@@ -301,7 +290,7 @@ class Perform(object):
                 self.twist.angular.z = 0.0
                 
                 # if still far from the closest object in the front, keep moving forward
-                if self.closest_distance_allowed < self.closest_range_in_front:
+                if self.tag_stop_threshold < self.closest_range_in_front:
                     print("moving forward")
                     self.twist.linear.x = 0.1
                 else:
@@ -314,7 +303,7 @@ class Perform(object):
                 e = img_center_x - curr_center_x
                 self.twist.angular.z = k * e
                 self.ar_tag_found = True
-                if self.closest_distance_allowed < self.closest_range_in_front:
+                if self.tag_stop_threshold < self.closest_range_in_front:
                     print("moving forward")
                     self.twist.linear.x = 0.1
                 # else:
@@ -425,7 +414,7 @@ class Perform(object):
         # print("min_dist:", min_dist)
         # return min_dist
 
-    def turnaround(self):
+    def move_back(self):
         print("turning around...")
         velo_b = Twist(
             linear = Vector3(-0.3,0,0),
@@ -434,13 +423,7 @@ class Perform(object):
         self.velo_publisher.publish(velo_b)
         rospy.sleep(1.5)
         self.stop()
-        velo_t = Twist(
-            linear = Vector3(0,0,0),
-            angular = Vector3(0,0,0.785398) #45 deg in rad
-        )
-        self.velo_publisher.publish(velo_t)
-        rospy.sleep(4)
-
+        
 
 if __name__ == '__main__':
     # declare the ROS node and run it
