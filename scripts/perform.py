@@ -263,6 +263,8 @@ class Perform(object):
             
             # set goal id
             goal_id = self.current_action.tag_id
+            
+            # https://pyimagesearch.com/2020/12/21/detecting-aruco-markers-with-opencv-and-python/
             # extract tag parameters
             corners, ids, rejected_points = cv2.aruco.detectMarkers(self.grayscale_img, self.aruco_dict)
             curr_center_x = 0
