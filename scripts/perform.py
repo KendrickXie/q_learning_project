@@ -229,7 +229,7 @@ class Perform(object):
 
     
     # find tag and move to it
-    def find_tag(self): #Kendrick
+    def find_tag(self):
         # find the x coordinate of the center of the image
         while self.search_for_tag:
             h, w = self.grayscale_img.shape
@@ -300,7 +300,7 @@ class Perform(object):
 
 
                 
-    def pick_up(self): #Alex
+    def pick_up(self):
         # Move the arm down
         self.move_group_arm.go(self.arm_down, wait=True)
         rospy.sleep(3)
@@ -312,7 +312,7 @@ class Perform(object):
         rospy.sleep(3)
 
     
-    def put_down(self): #Kendrick
+    def put_down(self):
         # Move the arm down
         self.move_group_arm.go(self.arm_down, wait=True)
         rospy.sleep(3)
@@ -325,7 +325,7 @@ class Perform(object):
 
     
     # select an action
-    def select_action(self): #Alex
+    def select_action(self):
         # publish action
         print("Selecting action...")
         self.ang_complete = False
