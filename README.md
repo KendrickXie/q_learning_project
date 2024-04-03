@@ -85,4 +85,4 @@ It would be interesting to try to figure out how best to enable the robot to con
 2. Although working independently proved to be more efficient, it would have been beneficial to discuss the structure of our code before working on our own functions. This would have reduced the time it took to merge our code once we finished our parts of the work.
 
 ## gif (4x Speed)
-![q_learning.gif](https://github.com/alexwuqizhang/q_learning_project/blob/main/q_learning.gif)
+![q_learning.gif](https://github.com/KendrickXie/q_learning_project/blob/main/q_learning.gif)
